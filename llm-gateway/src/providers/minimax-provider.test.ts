@@ -10,7 +10,6 @@ describe("MiniMaxProvider", () => {
     vi.stubGlobal("fetch", mockFetch);
     provider = new MiniMaxProvider({
       apiKey: "test-api-key",
-      groupId: "test-group-id",
     });
   });
 
@@ -21,13 +20,12 @@ describe("MiniMaxProvider", () => {
   describe("constructor", () => {
     it("uses default baseUrl and model", () => {
       expect(provider.name).toBe("minimax");
-      expect(provider.models).toContain("abab6.5s-chat");
+      expect(provider.models).toContain("MiniMax-M2.7");
     });
 
     it("accepts custom baseUrl", () => {
       const p = new MiniMaxProvider({
         apiKey: "key",
-        groupId: "group",
         baseUrl: "https://custom.api.com",
       });
       expect(p.name).toBe("minimax");
@@ -63,19 +61,19 @@ describe("MiniMaxProvider", () => {
             completion_tokens: 8,
             total_tokens: 23,
           },
-          model: "abab6.5s-chat",
+          model: "MiniMax-M2.7",
         }),
       });
 
       const response = await provider.chatCompletion({
-        model: "abab6.5s-chat",
+        model: "MiniMax-M2.7",
         messages: [{ role: "user", content: "Hi" }],
         maxTokens: 100,
       });
 
       expect(response.id).toBe("response-123");
       expect(response.content).toBe("Hello from MiniMax!");
-      expect(response.model).toBe("abab6.5s-chat");
+      expect(response.model).toBe("MiniMax-M2.7");
       expect(response.usage.inputTokens).toBe(15);
       expect(response.usage.outputTokens).toBe(8);
       expect(response.finishReason).toBe("stop");
@@ -88,18 +86,18 @@ describe("MiniMaxProvider", () => {
           id: "123",
           choices: [{ index: 0, finish_reason: "stop", message: { content: "Hi" } }],
           usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-          model: "abab6.5s-chat",
+          model: "MiniMax-M2.7",
         }),
       });
 
       await provider.chatCompletion({
-        model: "abab6.5s-chat",
+        model: "MiniMax-M2.7",
         messages: [{ role: "user", content: "Hi" }],
         maxTokens: 100,
       });
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("GroupId=test-group-id"),
+        expect.stringContaining("/text/chatcompletion_v2"),
         expect.objectContaining({
           headers: expect.objectContaining({
             Authorization: "Bearer test-api-key",
@@ -117,7 +115,7 @@ describe("MiniMaxProvider", () => {
 
       await expect(
         provider.chatCompletion({
-          model: "abab6.5s-chat",
+          model: "MiniMax-M2.7",
           messages: [{ role: "user", content: "Hi" }],
           maxTokens: 100,
         })
@@ -133,7 +131,7 @@ describe("MiniMaxProvider", () => {
 
       await expect(
         provider.chatCompletion({
-          model: "abab6.5s-chat",
+          model: "MiniMax-M2.7",
           messages: [{ role: "user", content: "Hi" }],
           maxTokens: 100,
         })
@@ -147,13 +145,13 @@ describe("MiniMaxProvider", () => {
           id: "123",
           choices: [],
           usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-          model: "abab6.5s-chat",
+          model: "MiniMax-M2.7",
         }),
       });
 
       await expect(
         provider.chatCompletion({
-          model: "abab6.5s-chat",
+          model: "MiniMax-M2.7",
           messages: [{ role: "user", content: "Hi" }],
           maxTokens: 100,
         })
@@ -184,12 +182,13 @@ describe("MiniMaxProvider", () => {
 
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        headers: new Headers({ "content-type": "text/event-stream" }),
         body: { getReader: () => mockReader },
       });
 
       const results: unknown[] = [];
       for await (const chunk of provider.streamCompletion({
-        model: "abab6.5s-chat",
+        model: "MiniMax-M2.7",
         messages: [{ role: "user", content: "Hi" }],
         maxTokens: 100,
       })) {
@@ -204,11 +203,12 @@ describe("MiniMaxProvider", () => {
     it("throws ProviderError when no response body", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        headers: new Headers({ "content-type": "text/event-stream" }),
         body: null,
       });
 
       const gen = provider.streamCompletion({
-        model: "abab6.5s-chat",
+        model: "MiniMax-M2.7",
         messages: [{ role: "user", content: "Hi" }],
         maxTokens: 100,
       });
@@ -218,6 +218,33 @@ describe("MiniMaxProvider", () => {
           void chunk;
         }
       }).rejects.toThrow("No response body");
+    });
+
+    it("throws AuthenticationError on JSON error response", async () => {
+      // MiniMax returns JSON (not SSE) with HTTP 200 for authentication errors
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-type": "application/json" }),
+        text: async () =>
+          JSON.stringify({
+            base_resp: {
+              status_code: 1004,
+              status_msg: "login fail: Please carry the API secret key",
+            },
+          }),
+      });
+
+      const gen = provider.streamCompletion({
+        model: "MiniMax-M2.7",
+        messages: [{ role: "user", content: "Hi" }],
+        maxTokens: 100,
+      });
+
+      await expect(async () => {
+        for await (const chunk of gen) {
+          void chunk;
+        }
+      }).rejects.toThrow(AuthenticationError);
     });
   });
 
@@ -229,12 +256,12 @@ describe("MiniMaxProvider", () => {
           id: "123",
           choices: [{ index: 0, finish_reason: "stop", message: { content: "OK" } }],
           usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-          model: "abab6.5s-chat",
+          model: "MiniMax-M2.7",
         }),
       });
 
       await provider.chatCompletion({
-        model: "abab6.5s-chat",
+        model: "MiniMax-M2.7",
         messages: [
           { role: "user", content: "Call tool" },
           { role: "tool", content: "Tool result", toolCallId: "tc-1" },
@@ -249,9 +276,8 @@ describe("MiniMaxProvider", () => {
 
   describe("supportsModel", () => {
     it("supports listed models", () => {
-      expect(provider.supportsModel("abab6.5s-chat")).toBe(true);
-      expect(provider.supportsModel("abab6.5g-chat")).toBe(true);
-      expect(provider.supportsModel("abab5.5-chat")).toBe(true);
+      expect(provider.supportsModel("MiniMax-M2.7")).toBe(true);
+      expect(provider.supportsModel("MiniMax-M2.5")).toBe(true);
     });
 
     it("does not support unknown models", () => {

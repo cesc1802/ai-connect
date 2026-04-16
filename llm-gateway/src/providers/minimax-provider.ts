@@ -168,6 +168,26 @@ export class MiniMaxProvider extends BaseProvider {
         throw await this.handleFetchError(response);
       }
 
+      // MiniMax returns JSON (not SSE) for errors even when stream=true
+      // Check Content-Type to detect this case BEFORE trying to get reader
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json") && !contentType.includes("text/event-stream")) {
+        // Read full body and check for error
+        const fullBody = await response.text();
+        try {
+          const errorData = JSON.parse(fullBody);
+          this.checkBodyError(errorData);
+        } catch (parseError) {
+          // If JSON parse fails but we got here, it's an unexpected response
+          if (!(parseError instanceof ProviderError)) {
+            throw new ProviderError(`Unexpected JSON response: ${fullBody}`, "minimax");
+          }
+          throw parseError;
+        }
+        // If no error thrown, unexpected success response format
+        throw new ProviderError("Expected SSE stream but got JSON response", "minimax");
+      }
+
       const reader = response.body?.getReader();
       if (!reader) {
         throw new ProviderError("No response body", "minimax");
