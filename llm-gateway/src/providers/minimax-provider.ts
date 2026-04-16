@@ -11,7 +11,7 @@ import { ProviderError, RateLimitError, AuthenticationError } from "../core/inde
 import { BaseProvider } from "./base-provider.js";
 import { ProviderFactory } from "../factory/index.js";
 
-const MINIMAX_BASE_URL = "https://api.minimax.chat/v1";
+const MINIMAX_BASE_URL = "https://api.minimax.io/v1";
 
 /**
  * MiniMax API response types
@@ -52,29 +52,34 @@ interface MiniMaxStreamChunk {
 }
 
 /**
+ * MiniMax returns HTTP 200 even for errors, with error details in body
+ */
+interface MiniMaxErrorResponse {
+  base_resp: {
+    status_code: number;
+    status_msg: string;
+  };
+}
+
+/**
  * MiniMax provider - China-based LLM with API key + group ID auth
  */
 export class MiniMaxProvider extends BaseProvider {
   readonly name = "minimax" as const;
   readonly models = [
-    "abab6.5s-chat",
-    "abab6.5g-chat",
-    "abab6.5t-chat",
-    "abab5.5s-chat",
-    "abab5.5-chat",
+    "MiniMax-M2.7",
+    "MiniMax-M2.5"
   ];
 
   private readonly apiKey: string;
-  private readonly groupId: string;
   private readonly baseUrl: string;
   private readonly defaultModel: string;
 
   constructor(config: MiniMaxConfig) {
     super();
     this.apiKey = config.apiKey;
-    this.groupId = config.groupId;
     this.baseUrl = config.baseUrl ?? MINIMAX_BASE_URL;
-    this.defaultModel = config.defaultModel ?? "abab6.5s-chat";
+    this.defaultModel = config.defaultModel ?? "MiniMax-M2.7";
   }
 
   capabilities(): ProviderCapabilities {
@@ -96,7 +101,7 @@ export class MiniMaxProvider extends BaseProvider {
 
     try {
       const response = await fetch(
-        `${this.baseUrl}/text/chatcompletion_v2?GroupId=${this.groupId}`,
+        `${this.baseUrl}/text/chatcompletion_v2`,
         {
           method: "POST",
           headers: {
@@ -119,8 +124,9 @@ export class MiniMaxProvider extends BaseProvider {
         throw await this.handleFetchError(response);
       }
 
-      const data = (await response.json()) as MiniMaxChatResponse;
-      return this.normalizeResponse(data, requestId);
+      const data = await response.json();
+      this.checkBodyError(data);
+      return this.normalizeResponse(data as MiniMaxChatResponse, requestId);
     } catch (error) {
       if (error instanceof ProviderError) throw error;
       throw this.mapError(error);
@@ -139,7 +145,7 @@ export class MiniMaxProvider extends BaseProvider {
 
     try {
       const response = await fetch(
-        `${this.baseUrl}/text/chatcompletion_v2?GroupId=${this.groupId}`,
+        `${this.baseUrl}/text/chatcompletion_v2`,
         {
           method: "POST",
           headers: {
@@ -194,14 +200,17 @@ export class MiniMaxProvider extends BaseProvider {
               continue;
             }
 
-            let chunk: MiniMaxStreamChunk;
+            let parsed: unknown;
             try {
-              chunk = JSON.parse(data) as MiniMaxStreamChunk;
+              parsed = JSON.parse(data);
             } catch {
               continue; // Skip malformed chunks
             }
 
-            const choice = chunk.choices[0];
+            // Check for body-level errors (MiniMax returns errors as JSON, not SSE)
+            this.checkBodyError(parsed);
+            const chunk = parsed as MiniMaxStreamChunk;
+            const choice = chunk.choices?.[0];
 
             if (choice?.delta?.content) {
               yield {
@@ -299,6 +308,25 @@ export class MiniMaxProvider extends BaseProvider {
         return "length";
       default:
         return "stop";
+    }
+  }
+
+  /**
+   * Check for MiniMax body-level errors (HTTP 200 but error in body)
+   * MiniMax returns status_code: 0 for success, non-zero for errors
+   */
+  private checkBodyError(data: unknown): void {
+    const errorData = data as MiniMaxErrorResponse;
+    if (errorData?.base_resp?.status_code && errorData.base_resp.status_code !== 0) {
+      const { status_code, status_msg } = errorData.base_resp;
+      // Map common error codes (1004=invalid key, 2049=invalid api key, 1002=auth fail)
+      if (status_code === 1004 || status_code === 2049 || status_code === 1002) {
+        throw new AuthenticationError("minimax", new Error(status_msg));
+      }
+      if (status_code === 1008) {
+        throw new RateLimitError("minimax", undefined, new Error(status_msg));
+      }
+      throw new ProviderError(`MiniMax error ${status_code}: ${status_msg}`, "minimax", status_code);
     }
   }
 
