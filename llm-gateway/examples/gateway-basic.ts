@@ -2,32 +2,49 @@
  * Gateway Basic Example - Unified API
  * Demonstrates the LLMGateway's unified interface across providers
  *
- * Run: ANTHROPIC_API_KEY=... npx tsx examples/gateway-basic.ts
+ * Run: MINIMAX_API_KEY=... npx tsx examples/gateway-basic.ts
  */
 
 // Import the main gateway class
-import { LLMGateway } from "../src/gateway.js";
+import {LLMGateway} from "../src/gateway.js";
 
-// Create gateway with configured providers
-// The gateway provides a unified API regardless of which provider you use
+/**
+ * Model Configuration Pattern
+ *
+ * CONSISTENT FORMAT: Always use "provider/model" for explicit routing
+ * - ollama/qwen2.5:7b-instruct  → Routes to Ollama, uses qwen2.5:7b-instruct model
+ * - minimax/MiniMax-M2.7        → Routes to MiniMax, uses MiniMax-M2.7 model
+ *
+ * The gateway strips the provider prefix before sending to the actual API.
+ * This ensures predictable routing regardless of defaultProvider setting.
+ */
 const gateway = new LLMGateway({
-  // Configure one or more providers
-  providers: {
-    anthropic: { apiKey: process.env.ANTHROPIC_API_KEY! },
-    // Uncomment to add more providers:
-    // openai: { apiKey: process.env.OPENAI_API_KEY! },
-  },
-  // Set which provider to use by default
-  defaultProvider: "anthropic",
+    providers: {
+        ollama: {
+            baseUrl: "http://100.107.85.81:11434",
+            defaultModel: "qwen2.5:7b-instruct"  // Used when model omitted
+        },
+        minimax: {
+            baseUrl: 'https://api.minimax.io/v1',
+            apiKey: process.env.MINIMAX_API_KEY || 'your-api-key-here',
+            defaultModel: "MiniMax-M2.7"  // Used when model omitted
+        },
+    },
+    defaultProvider: "ollama",
 });
 
 // === Basic Chat with Gateway ===
 // The gateway provides a consistent interface for all providers
 console.log("=== Gateway Chat ===");
+
+// Both providers use the same "provider/model" format:
+const MODEL = "ollama/qwen2.5:7b-instruct";  // Ollama provider
+// const MODEL = "minimax/MiniMax-M2.7";     // MiniMax provider
+
 const response = await gateway.chat({
-  model: "claude-sonnet-4-20250514",
-  messages: [{ role: "user", content: "What is 2+2?" }],
-  maxTokens: 50,
+    model: MODEL,
+    messages: [{role: "user", content: "What is 2+2?"}],
+    maxTokens: 50,
 });
 
 // Response format is consistent across all providers

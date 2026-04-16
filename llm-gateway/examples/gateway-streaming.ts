@@ -2,18 +2,35 @@
  * Gateway Streaming Example
  * Demonstrates streaming responses through the gateway
  *
- * Run: ANTHROPIC_API_KEY=... npx tsx examples/gateway-streaming.ts
+ * Run: npx tsx examples/gateway-streaming.ts
  */
 
 // Import the main gateway class
 import { LLMGateway } from "../src/gateway.js";
 
-// Create gateway with Anthropic provider
+/**
+ * Model Configuration Pattern
+ *
+ * CONSISTENT FORMAT: Always use "provider/model" for explicit routing
+ * - ollama/qwen2.5:7b-instruct  → Routes to Ollama, uses qwen2.5:7b-instruct model
+ * - minimax/MiniMax-M2.7        → Routes to MiniMax, uses MiniMax-M2.7 model
+ *
+ * The gateway strips the provider prefix before sending to the actual API.
+ * This ensures predictable routing regardless of defaultProvider setting.
+ */
 const gateway = new LLMGateway({
-  providers: {
-    anthropic: { apiKey: process.env.ANTHROPIC_API_KEY! },
-  },
-  defaultProvider: "anthropic",
+    providers: {
+        ollama: {
+            baseUrl: "http://100.107.85.81:11434",
+            defaultModel: "qwen2.5:7b-instruct"  // Used when model omitted
+        },
+        minimax: {
+            baseUrl: 'https://api.minimax.io/v1',
+            apiKey: process.env.MINIMAX_API_KEY || 'your-api-key-here',
+            defaultModel: "MiniMax-M2.7"  // Used when model omitted
+        },
+    },
+    defaultProvider: "ollama",
 });
 
 // === Streaming Response ===
@@ -23,9 +40,13 @@ console.log("=== Streaming ===");
 process.stdout.write("Response: ");
 
 // The stream() method returns an async iterator
+// Both providers use the same "provider/model" format:
+const MODEL = "minimax/MiniMax-M2.7";   // MiniMax provider
+// const MODEL = "ollama/qwen2.5:7b-instruct";  // Ollama provider
+
 for await (const chunk of gateway.stream({
-  model: "claude-sonnet-4-20250514",
-  messages: [{ role: "user", content: "Write a haiku about coding." }],
+  model: MODEL,
+  messages: [{ role: "user", content: "count from 1 to 20" }],
   maxTokens: 100,
 })) {
   // Each chunk contains a delta with new content
