@@ -19,6 +19,8 @@ import {
 } from "./core/index.js";
 import type { LLMProvider } from "./providers/index.js";
 import { ProviderFactory } from "./factory/index.js";
+// Side-effect import to register all providers with the factory
+import "./init.js";
 import { Router, RoundRobinStrategy } from "./routing/index.js";
 import type { IRoutingStrategy } from "./routing/index.js";
 import { CircuitBreaker, RetryDecorator, FallbackChain } from "./resilience/index.js";
@@ -144,16 +146,18 @@ export class LLMGateway {
     this.totalRequests++;
 
     const provider = this.resolveProvider(request, options);
+    // Normalize model name by stripping provider prefix (e.g., "minimax/MiniMax-M2.7" -> "MiniMax-M2.7")
+    const normalizedRequest = this.normalizeRequest(request);
     const { signal, cleanup } = this.createTimeoutSignal(options);
 
     // Start telemetry span
-    this.metrics.recordRequest(provider.name, request.model, false);
+    this.metrics.recordRequest(provider.name, normalizedRequest.model, false);
     const span = this.tracer.startChatSpan();
-    span.setRequestAttributes(request, provider.name);
+    span.setRequestAttributes(normalizedRequest, provider.name);
 
     try {
       const response = await new RetryDecorator(provider, this.retryConfig).chatCompletion(
-        request,
+        normalizedRequest,
         signal
       );
 
@@ -193,25 +197,27 @@ export class LLMGateway {
     this.totalRequests++;
 
     const provider = this.resolveProvider(request, options);
+    // Normalize model name by stripping provider prefix (e.g., "minimax/MiniMax-M2.7" -> "MiniMax-M2.7")
+    const normalizedRequest = this.normalizeRequest(request);
     const { signal, cleanup } = this.createTimeoutSignal(options);
 
     // Start telemetry span
-    this.metrics.recordRequest(provider.name, request.model, true);
+    this.metrics.recordRequest(provider.name, normalizedRequest.model, true);
     const span = this.tracer.startStreamSpan();
-    span.setRequestAttributes(request, provider.name);
+    span.setRequestAttributes(normalizedRequest, provider.name);
 
     const startTime = performance.now();
 
     try {
       const retryProvider = new RetryDecorator(provider, this.retryConfig);
 
-      for await (const chunk of retryProvider.streamCompletion(request, signal)) {
+      for await (const chunk of retryProvider.streamCompletion(normalizedRequest, signal)) {
         yield chunk;
       }
 
       const latency = Math.round(performance.now() - startTime);
       this.recordLatency(latency);
-      this.metrics.recordLatency(provider.name, request.model, latency);
+      this.metrics.recordLatency(provider.name, normalizedRequest.model, latency);
       this.updateCircuitHealth(provider.name, true);
     } catch (error) {
       this.totalErrors++;
@@ -359,6 +365,18 @@ export class LLMGateway {
       signal: controller.signal,
       cleanup: () => clearTimeout(timeoutId),
     };
+  }
+
+  /**
+   * Normalize request by stripping provider prefix from model name
+   * e.g., "minimax/MiniMax-M2.7" -> "MiniMax-M2.7"
+   */
+  private normalizeRequest(request: ChatRequest): ChatRequest {
+    const parts = request.model.split("/");
+    if (parts.length >= 2 && PROVIDER_NAMES.includes(parts[0] as ProviderName)) {
+      return { ...request, model: parts.slice(1).join("/") };
+    }
+    return request;
   }
 
   /**
