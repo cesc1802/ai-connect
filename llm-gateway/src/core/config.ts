@@ -24,7 +24,6 @@ export interface OllamaConfig {
 
 export interface MiniMaxConfig {
   apiKey: string;
-  groupId: string;
   baseUrl?: string;
   defaultModel?: string;
 }
@@ -131,12 +130,10 @@ export function loadConfigFromEnv(): Partial<ProviderConfig> {
 
   // MiniMax
   const minimaxKey = process.env.MINIMAX_API_KEY;
-  const minimaxGroup = process.env.MINIMAX_GROUP_ID;
-  if (minimaxKey && minimaxGroup) {
+  if (minimaxKey) {
     const minimaxBaseUrl = process.env.MINIMAX_BASE_URL;
     config.minimax = {
       apiKey: minimaxKey,
-      groupId: minimaxGroup,
       ...(minimaxBaseUrl && { baseUrl: minimaxBaseUrl }),
     };
   }
@@ -203,9 +200,6 @@ export function validateConfig(config: GatewayConfig): void {
   if (providers.minimax) {
     if (!providers.minimax.apiKey) {
       throw new ValidationError("MiniMax API key is required", "providers.minimax.apiKey");
-    }
-    if (!providers.minimax.groupId) {
-      throw new ValidationError("MiniMax group ID is required", "providers.minimax.groupId");
     }
   }
 }

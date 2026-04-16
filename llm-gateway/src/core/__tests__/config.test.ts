@@ -41,7 +41,7 @@ describe("validateConfig", () => {
   it("should pass with valid minimax config", () => {
     const config: GatewayConfig = {
       providers: {
-        minimax: { apiKey: "test-key", groupId: "test-group" },
+        minimax: { apiKey: "test-key" },
       },
     };
     expect(() => validateConfig(config)).not.toThrow();
@@ -85,16 +85,9 @@ describe("validateConfig", () => {
 
   it("should throw when minimax missing api key", () => {
     const config: GatewayConfig = {
-      providers: { minimax: { apiKey: "", groupId: "test" } },
+      providers: { minimax: { apiKey: "" } },
     };
     expect(() => validateConfig(config)).toThrow("MiniMax API key is required");
-  });
-
-  it("should throw when minimax missing group id", () => {
-    const config: GatewayConfig = {
-      providers: { minimax: { apiKey: "test", groupId: "" } },
-    };
-    expect(() => validateConfig(config)).toThrow("MiniMax group ID is required");
   });
 });
 
@@ -144,21 +137,19 @@ describe("loadConfigFromEnv", () => {
 
   it("should load minimax config from env", () => {
     process.env.MINIMAX_API_KEY = "test-minimax-key";
-    process.env.MINIMAX_GROUP_ID = "test-group";
     process.env.MINIMAX_BASE_URL = "https://custom.minimax.com";
 
     const config = loadConfigFromEnv();
     expect(config.minimax).toEqual({
       apiKey: "test-minimax-key",
-      groupId: "test-group",
       baseUrl: "https://custom.minimax.com",
     });
   });
 
-  it("should not include minimax if only api key set", () => {
+  it("should load minimax config with only api key", () => {
     process.env.MINIMAX_API_KEY = "test-key";
     const config = loadConfigFromEnv();
-    expect(config.minimax).toBeUndefined();
+    expect(config.minimax).toEqual({ apiKey: "test-key" });
   });
 
   it("should return empty config when no env vars set", () => {
