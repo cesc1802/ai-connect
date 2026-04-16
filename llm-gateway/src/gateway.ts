@@ -15,6 +15,7 @@ import {
   DEFAULT_RETRY,
   PROVIDER_NAMES,
   TimeoutError,
+  LLMError,
 } from "./core/index.js";
 import type { LLMProvider } from "./providers/index.js";
 import { ProviderFactory } from "./factory/index.js";
@@ -22,6 +23,7 @@ import { Router, RoundRobinStrategy } from "./routing/index.js";
 import type { IRoutingStrategy } from "./routing/index.js";
 import { CircuitBreaker, RetryDecorator, FallbackChain } from "./resilience/index.js";
 import type { CircuitMetrics } from "./resilience/index.js";
+import { LLMTracer, LLMMetrics } from "./telemetry/index.js";
 
 /**
  * Gateway metrics for monitoring
@@ -75,6 +77,10 @@ export class LLMGateway {
   private readonly retryConfig: RetryConfig;
   private readonly timeoutMs: number;
 
+  // Telemetry
+  private readonly tracer: LLMTracer;
+  private readonly metrics: LLMMetrics;
+
   // Metrics tracking
   private totalRequests = 0;
   private totalErrors = 0;
@@ -92,6 +98,10 @@ export class LLMGateway {
     // Store configs
     this.retryConfig = { ...DEFAULT_RETRY, ...config.retry };
     this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+    // Initialize telemetry
+    this.tracer = new LLMTracer(config.telemetry);
+    this.metrics = new LLMMetrics(config.telemetry);
 
     // Create factory
     this.factory = new ProviderFactory(mergedConfig.providers);
@@ -136,20 +146,39 @@ export class LLMGateway {
     const provider = this.resolveProvider(request, options);
     const { signal, cleanup } = this.createTimeoutSignal(options);
 
+    // Start telemetry span
+    this.metrics.recordRequest(provider.name, request.model, false);
+    const span = this.tracer.startChatSpan();
+    span.setRequestAttributes(request, provider.name);
+
     try {
       const response = await new RetryDecorator(provider, this.retryConfig).chatCompletion(
         request,
         signal
       );
 
+      span.setResponseAttributes(response);
       this.recordLatency(response.latencyMs);
+      this.metrics.recordLatency(provider.name, response.model, response.latencyMs);
+      this.metrics.recordTokens(
+        provider.name,
+        response.model,
+        response.usage.inputTokens,
+        response.usage.outputTokens
+      );
       this.updateCircuitHealth(provider.name, true);
       return response;
     } catch (error) {
       this.totalErrors++;
+      span.recordError(error instanceof Error ? error : new Error(String(error)));
+      this.metrics.recordError(
+        provider.name,
+        error instanceof LLMError ? error.code : "UNKNOWN"
+      );
       this.updateCircuitHealth(provider.name, false);
       throw error;
     } finally {
+      span.end();
       cleanup();
     }
   }
@@ -166,6 +195,11 @@ export class LLMGateway {
     const provider = this.resolveProvider(request, options);
     const { signal, cleanup } = this.createTimeoutSignal(options);
 
+    // Start telemetry span
+    this.metrics.recordRequest(provider.name, request.model, true);
+    const span = this.tracer.startStreamSpan();
+    span.setRequestAttributes(request, provider.name);
+
     const startTime = performance.now();
 
     try {
@@ -177,12 +211,19 @@ export class LLMGateway {
 
       const latency = Math.round(performance.now() - startTime);
       this.recordLatency(latency);
+      this.metrics.recordLatency(provider.name, request.model, latency);
       this.updateCircuitHealth(provider.name, true);
     } catch (error) {
       this.totalErrors++;
+      span.recordError(error instanceof Error ? error : new Error(String(error)));
+      this.metrics.recordError(
+        provider.name,
+        error instanceof LLMError ? error.code : "UNKNOWN"
+      );
       this.updateCircuitHealth(provider.name, false);
       throw error;
     } finally {
+      span.end();
       cleanup();
     }
   }

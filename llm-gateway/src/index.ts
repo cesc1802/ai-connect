@@ -44,3 +44,7 @@ export {
   RetryDecorator,
 } from "./resilience/index.js";
 export type { CircuitMetrics, RetryEvent, RetryEventListener } from "./resilience/index.js";
+
+// Telemetry
+export { LLMTracer, LLMMetrics } from "./telemetry/index.js";
+export type { LLMSpan } from "./telemetry/index.js";
