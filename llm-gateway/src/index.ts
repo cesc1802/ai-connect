@@ -1,4 +1,5 @@
 // llm-gateway - Unified LLM Provider SDK
-// Entry point - exports will be added in subsequent phases
-
 export const VERSION = "0.1.0";
+
+// Re-export core types and errors
+export * from "./core/index.js";
