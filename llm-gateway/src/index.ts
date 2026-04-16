@@ -15,3 +15,7 @@ export { ProviderFactory } from "./factory/index.js";
 // Re-export routing
 export type { IRoutingStrategy, ProviderInfo, RouterConfig, ProviderCost } from "./routing/index.js";
 export { isRoutingStrategy, Router, RoundRobinStrategy, CostBasedStrategy, CapabilityBasedStrategy } from "./routing/index.js";
+
+// Re-export resilience
+export { CircuitBreaker, CircuitState, FallbackChain, RetryDecorator } from "./resilience/index.js";
+export type { CircuitMetrics, RetryEvent, RetryEventListener } from "./resilience/index.js";
