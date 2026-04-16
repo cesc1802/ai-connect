@@ -5,6 +5,9 @@ import type { LLMProvider } from "../providers/index.js";
 import { ProviderFactory } from "../factory/index.js";
 import { CircuitState } from "../resilience/index.js";
 
+// Mock init to prevent provider registration side effects
+vi.mock("../init.js", () => ({}));
+
 // Mock ProviderFactory
 vi.mock("../factory/index.js", () => ({
   ProviderFactory: vi.fn().mockImplementation(() => ({
