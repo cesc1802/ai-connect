@@ -1,7 +1,7 @@
 # LLM Gateway - Code Standards & Guidelines
 
-**Last Updated:** April 16, 2026  
-**Version:** 1.0.0
+**Last Updated:** April 17, 2026  
+**Version:** 1.1.0
 
 ## TypeScript Configuration
 
@@ -808,6 +808,201 @@ export class JwtService {
   }
 }
 ```
+
+### Command Pattern for Message Handlers
+
+**Purpose:** Dispatch messages to type-specific handlers using discriminated unions and polymorphism.
+
+```typescript
+// ✓ Do: Define handler interface with type discriminator
+export interface WsCommandHandler<T extends ClientMessage = ClientMessage> {
+  readonly type: T["type"]; // Discriminator: "chat" | "ping"
+  handle(socket: AuthenticatedSocket, msg: T, send: SendFn, ctx: HandlerContext): void;
+}
+
+// ✓ Do: Implement handlers for each message type
+export class ChatCommandHandler implements WsCommandHandler<ChatMessage> {
+  readonly type = "chat" as const;
+
+  constructor(private readonly streamChat: StreamChatUseCase) {}
+
+  handle(socket: AuthenticatedSocket, msg: ChatMessage, send: SendFn, ctx: HandlerContext): void {
+    ctx.activeStream.handle?.abort(); // Cancel previous stream
+    
+    ctx.activeStream.handle = this.streamChat.execute(
+      { model: msg.model, messages: msg.messages, maxTokens: msg.maxTokens ?? 4096 },
+      {
+        onChunk: (delta) => send({ type: "chunk", delta }),
+        onDone: (usage, finishReason) => {
+          send({ type: "done", usage, finishReason });
+          ctx.activeStream.handle = null;
+        },
+        onError: (err) => {
+          send({ type: "error", code: mapErrorToCode(err), message: sanitizeErrorMessage(err) });
+          ctx.activeStream.handle = null;
+        },
+      }
+    );
+  }
+}
+
+// ✓ Do: Create handler map for dispatch
+type WsCommandHandlerMap = {
+  [K in ClientMessage["type"]]?: WsCommandHandler<Extract<ClientMessage, { type: K }>>;
+};
+
+const handlers: WsCommandHandlerMap = {
+  chat: new ChatCommandHandler(streamChat),
+  ping: new PingCommandHandler(),
+};
+
+// ✓ Do: Use discriminated union to ensure type safety
+for (const [type, handler] of Object.entries(handlers)) {
+  if (handler?.type === type) {
+    // TypeScript knows handler matches the type
+  }
+}
+
+// ✗ Don't: Use string-based dispatch without type safety
+const handler = handlers[msg.type as string]; // Lost type information
+```
+
+**Handler Context Pattern:**
+
+```typescript
+// ✓ Do: Share mutable context across handler invocations
+interface HandlerContext {
+  activeStream: { handle: StreamHandle | null };
+  // Add other state that needs to persist across messages
+}
+
+// Context created once per connection
+const ctx: HandlerContext = { activeStream: { handle: null } };
+
+// Reused for each incoming message
+ws.on("message", (raw) => {
+  // Parse and dispatch to handler
+  handler.handle(socket, msg, send, ctx); // Context carries state
+});
+
+// ✗ Don't: Create new context per message (loses state)
+ws.on("message", (raw) => {
+  const ctx = { activeStream: { handle: null } }; // Fresh context = lost stream reference
+  handler.handle(socket, msg, send, ctx);
+});
+```
+
+**Error Mapping Pattern:**
+
+```typescript
+// ✓ Do: Map typed errors to client error codes
+const ERROR_CODE_MAP: Record<string, string> = {
+  AuthenticationError: "provider_auth_error",
+  RateLimitError: "provider_rate_limit",
+  TimeoutError: "provider_timeout",
+  CircuitOpenError: "provider_unavailable",
+  ValidationError: "invalid_request",
+};
+
+export function mapErrorToCode(err: Error): string {
+  return ERROR_CODE_MAP[err.name] ?? "internal_error";
+}
+
+// ✓ Do: Sanitize messages for sensitive errors
+export function sanitizeErrorMessage(err: Error): string {
+  const code = mapErrorToCode(err);
+  if (code === "internal_error") {
+    return "An unexpected error occurred"; // Generic for security
+  }
+  return err.message; // Safe to expose provider-specific errors
+}
+
+// ✗ Don't: Expose internal error details
+throw new Error(`Database query failed: ${query}`); // Leaks internals
+```
+
+**Message Validation Pattern:**
+
+```typescript
+// ✓ Do: Use Zod discriminated unions for type-safe validation
+const clientMessageSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("chat"),
+    id: z.string().min(1).max(64),
+    model: z.string().min(1),
+    messages: z.array(chatMessageSchema).min(1),
+    maxTokens: z.number().int().positive().max(8192).optional(),
+    temperature: z.number().min(0).max(2).optional(),
+  }),
+  z.object({
+    type: z.literal("ping"),
+    id: z.string().optional(),
+  }),
+]);
+
+const result = clientMessageSchema.safeParse(parsed);
+if (!result.success) {
+  send({ type: "error", code: "invalid_message", message: result.error.issues[0]?.message });
+  return;
+}
+
+const msg = result.data; // TypeScript knows exact type based on type field
+
+// ✗ Don't: Parse without discrimination
+const msg = z.object({ type: z.string(), ...commonFields }).parse(parsed);
+// Now msg.type is string, not "chat" | "ping"
+```
+
+**Backpressure Handling Pattern:**
+
+```typescript
+// ✓ Do: Check buffer before sending and drop if saturated
+const BACKPRESSURE_MAX = 1_000_000; // 1MB
+
+const send: SendFn = (msg: ServerMessage) => {
+  if (ws.bufferedAmount > BACKPRESSURE_MAX) {
+    logger.warn({ user: ws.user.username }, "backpressure: dropping message");
+    return; // Drop message, don't block
+  }
+  ws.send(JSON.stringify(msg));
+};
+
+// ✓ Do: Log backpressure events for monitoring
+logger.warn("backpressure", { bufferedAmount: ws.bufferedAmount, user: ws.user.username });
+
+// ✗ Don't: Block or queue indefinitely
+if (ws.bufferedAmount > BACKPRESSURE_MAX) {
+  await new Promise(resolve => setTimeout(resolve, 100)); // Blocks handler
+}
+
+// ✗ Don't: Ignore backpressure silently
+ws.send(JSON.stringify(msg)); // May cause memory leak
+```
+
+**Message Size Limits Pattern:**
+
+```typescript
+// ✓ Do: Validate size before parsing
+const MESSAGE_SIZE_LIMIT = 1_000_000; // 1MB
+
+ws.on("message", (raw) => {
+  const rawStr = raw.toString();
+  if (rawStr.length > MESSAGE_SIZE_LIMIT) {
+    send({ type: "error", code: "message_too_large", message: "Message exceeds 1MB limit" });
+    return;
+  }
+
+  // Parse and validate
+  const parsed = JSON.parse(rawStr);
+  const result = clientMessageSchema.safeParse(parsed);
+});
+
+// ✗ Don't: Parse first, validate size later
+const parsed = JSON.parse(rawStr); // Might fail on huge payload
+if (rawStr.length > MESSAGE_SIZE_LIMIT) { /* too late */ }
+```
+
+---
 
 ### Password Hashing Security
 

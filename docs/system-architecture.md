@@ -1,7 +1,7 @@
 # LLM Gateway - System Architecture
 
-**Last Updated:** April 16, 2026  
-**Version:** 1.0.0
+**Last Updated:** April 17, 2026  
+**Version:** 1.1.0
 
 ## High-Level Architecture
 
@@ -321,6 +321,10 @@ Aggregated Capabilities:
 - Record metrics for monitoring
 - Export telemetry data to external systems
 
+---
+
+### Layer 6: Core Layer (core/)
+
 **OpenTelemetry Spans (llm.chat, llm.stream):**
 
 ```
@@ -383,9 +387,6 @@ OpenTelemetry Exporter configured in GatewayConfig
 Batch → Prometheus / Jaeger / CloudTrace
 ```
 
----
-
-### Layer 6: Core Layer (core/)
 
 **Responsibilities:**
 - Define unified type system
@@ -687,7 +688,135 @@ Shutdown handler called
 
 ---
 
-### Layer 3: Authentication Layer (auth/)
+### Layer 3: Chat Handler Layer (chat/)
+
+**Responsibilities:**
+- Handle WebSocket message reception and routing via Command Pattern
+- Validate client messages with Zod schemas
+- Manage streaming operations with abort control
+- Map errors to client-friendly error codes
+- Enforce backpressure and message size limits
+
+**Components:**
+
+1. **Command Handler Interface** (`handlers/ws-command-handler.ts`)
+   - `WsCommandHandler<T extends ClientMessage>`: Generic handler interface
+   - `type: T["type"]`: Message type discriminator
+   - `handle(socket, msg, send, ctx): void`: Handler method signature
+   - Supports type-safe dispatch via discriminated union types
+
+2. **Handler Implementations:**
+   - **ChatCommandHandler** (`handlers/chat-command-handler.ts`)
+     - Handles `{ type: "chat" }` messages
+     - Parses model, messages, maxTokens (default: 4096), temperature
+     - Executes `StreamChatUseCase.execute()` with callbacks
+     - Aborts previous stream if new chat arrives
+   - **PingCommandHandler** (`handlers/ping-command-handler.ts`)
+     - Handles `{ type: "ping" }` messages for keepalive
+     - Responds with `{ type: "pong" }` message
+
+3. **Message Validation** (`chat-message-validator.ts`)
+   - Zod schema: `clientMessageSchema` (discriminated union)
+   - Chat message schema:
+     - `type: "chat"`
+     - `id: string` (1-64 chars)
+     - `model: string` (non-empty)
+     - `messages: ChatMessage[]` (at least 1)
+     - `maxTokens?: number` (1-8192, optional)
+     - `temperature?: number` (0-2, optional)
+   - Ping message schema:
+     - `type: "ping"`
+     - `id?: string` (optional)
+
+4. **Streaming Use Case** (`stream-chat-use-case.ts`)
+   - Wraps `ChatGatewayPort.stream()` with AbortController
+   - Implements callbacks pattern:
+     - `onChunk(delta: string)`: Emitted for each text chunk
+     - `onDone(usage, finishReason)`: Final message with metrics
+     - `onError(err)`: Error propagation
+   - Returns `StreamHandle`:
+     - `abort()`: Aborts stream via AbortController
+     - `done: Promise<void>`: Completes when stream ends
+
+5. **Error Mapping** (`error-mapper.ts`)
+   - Maps typed error names to client codes:
+     - `AuthenticationError` → `"provider_auth_error"`
+     - `RateLimitError` → `"provider_rate_limit"`
+     - `TimeoutError` → `"provider_timeout"`
+     - `CircuitOpenError` → `"provider_unavailable"`
+     - `FallbackExhaustedError` → `"all_providers_failed"`
+     - `ValidationError` → `"invalid_request"`
+     - `ModelNotFoundError` → `"model_not_found"`
+     - `ContentFilterError` → `"content_filtered"`
+     - `AbortError` → `"request_cancelled"`
+     - Default → `"internal_error"`
+   - `sanitizeErrorMessage()`: Returns generic message for internal errors
+
+6. **Main Handler Router** (`chat-ws-handler.ts`)
+   - Function: `attachChatHandler(handlers, logger): (socket) => void`
+   - Creates `HandlerContext` with `activeStream: { handle: null }`
+   - Validates all messages:
+     - **Message size limit**: 1MB (checks `rawStr.length`)
+     - **JSON parsing**: Catches JSON errors with error response
+     - **Schema validation**: Uses Zod safeParse with first error reported
+   - Handles dispatch:
+     - Looks up handler by message type
+     - Invokes `handler.handle(socket, msg, send, ctx)`
+   - **Backpressure control**:
+     - Checks `ws.bufferedAmount > 1MB` before sending
+     - Drops message with warning log if threshold exceeded
+   - Cleanup on close: Aborts active stream
+
+**Chat Handler Flow:**
+
+```
+WebSocket message arrives
+    ↓
+Check size (> 1MB)
+    ├─ YES: Send "message_too_large" error
+    └─ NO: Continue
+    
+Parse JSON
+    ├─ FAIL: Send "invalid_json" error
+    └─ SUCCESS: Continue
+    
+Validate against clientMessageSchema
+    ├─ FAIL: Send "invalid_message" error with first issue
+    └─ SUCCESS: Continue
+    
+Find handler by msg.type
+    ├─ NOT FOUND: Send "unknown_type" error
+    └─ FOUND: Continue
+    
+Check backpressure (bufferedAmount > 1MB)
+    ├─ EXCEEDED: Log warning, drop future message
+    └─ OK: Queue response
+    
+Invoke handler.handle(socket, msg, send, ctx)
+    ├─ ChatCommandHandler:
+    │   └─ Execute stream with callbacks
+    │       └─ onChunk → send({ type: "chunk" })
+    │       └─ onDone → send({ type: "done" })
+    │       └─ onError → send({ type: "error", code, message })
+    └─ PingCommandHandler:
+        └─ send({ type: "pong" })
+```
+
+**Handler Context Management:**
+
+```typescript
+interface HandlerContext {
+  activeStream: { handle: StreamHandle | null };
+}
+
+// Only one stream active per connection
+// New chat aborts previous stream
+// Stream aborted on connection close
+```
+
+---
+
+### Layer 4: Authentication Layer (auth/)
 
 **Components:**
 
@@ -769,7 +898,7 @@ Shutdown handler called
 
 ---
 
-### Layer 4: Data Access Layer (auth/)
+### Layer 5: Data Access Layer (auth/)
 
 **Repository Pattern:**
 
@@ -811,7 +940,7 @@ interface UserRecord {
 
 ---
 
-### Layer 5: Dependency Injection Layer (container.ts)
+### Layer 6: Dependency Injection Layer (container.ts)
 
 **Container Interface:**
 

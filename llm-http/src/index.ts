@@ -4,6 +4,7 @@ import { createLogger } from "./logger.js";
 import { buildContainer, type AppContainer } from "./container.js";
 import { createApp } from "./app.js";
 import { attachWebSocketServer, type WebSocketHandle } from "./ws/ws-server.js";
+import { attachChatHandler } from "./chat/chat-ws-handler.js";
 
 async function main() {
   const config = loadConfig();
@@ -13,6 +14,7 @@ async function main() {
   const server = http.createServer(app);
 
   const ws = attachWebSocketServer(server, container);
+  ws.onConnection(attachChatHandler(container.wsCommandHandlers, container.logger));
 
   server.listen(config.PORT, () => {
     logger.info({ port: config.PORT }, "Server listening");

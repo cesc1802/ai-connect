@@ -10,6 +10,10 @@ import { InMemoryUserRepository } from "./auth/in-memory-user-repository.js";
 import { seedUsers } from "./auth/seed-users.js";
 import { CredentialsVerifier } from "./auth/credentials-verifier.js";
 import { JwtService } from "./auth/jwt-service.js";
+import { StreamChatUseCase } from "./chat/stream-chat-use-case.js";
+import { ChatCommandHandler } from "./chat/handlers/chat-command-handler.js";
+import { PingCommandHandler } from "./chat/handlers/ping-command-handler.js";
+import type { WsCommandHandlerMap } from "./chat/chat-ws-handler.js";
 
 export interface AppContainer {
   config: Config;
@@ -18,6 +22,8 @@ export interface AppContainer {
   userRepository: UserRepository;
   credentialsVerifier: CredentialsVerifier;
   jwtService: JwtService;
+  streamChatUseCase: StreamChatUseCase;
+  wsCommandHandlers: WsCommandHandlerMap;
 }
 
 export function buildContainer(config: Config, logger: Logger): AppContainer {
@@ -42,5 +48,22 @@ export function buildContainer(config: Config, logger: Logger): AppContainer {
   const credentialsVerifier = new CredentialsVerifier(userRepository);
   const jwtService = new JwtService(config.JWT_SECRET, config.JWT_EXPIRES_IN);
 
-  return { config, logger, chatGateway, userRepository, credentialsVerifier, jwtService };
+  const streamChatUseCase = new StreamChatUseCase(chatGateway);
+  const chatCommandHandler = new ChatCommandHandler(streamChatUseCase);
+  const pingCommandHandler = new PingCommandHandler();
+  const wsCommandHandlers: WsCommandHandlerMap = {
+    chat: chatCommandHandler,
+    ping: pingCommandHandler,
+  };
+
+  return {
+    config,
+    logger,
+    chatGateway,
+    userRepository,
+    credentialsVerifier,
+    jwtService,
+    streamChatUseCase,
+    wsCommandHandlers,
+  };
 }
