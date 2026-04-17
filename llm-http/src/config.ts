@@ -1,5 +1,17 @@
 import { z } from "zod";
 import "dotenv/config";
+import type { UserRecord } from "./auth/user-repository.js";
+
+const demoUsersSchema = z
+  .string()
+  .default("[]")
+  .transform((s) => {
+    try {
+      return JSON.parse(s) as UserRecord[];
+    } catch {
+      return [] as UserRecord[];
+    }
+  });
 
 const configSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
@@ -9,8 +21,9 @@ const configSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OLLAMA_BASE_URL: z.string().url().optional(),
   MINIMAX_API_KEY: z.string().optional(),
-  JWT_SECRET: z.string().optional(),
-  DEMO_USERS: z.string().default("[]"),
+  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
+  JWT_EXPIRES_IN: z.string().default("1h"),
+  DEMO_USERS: demoUsersSchema,
 });
 
 export type Config = z.infer<typeof configSchema>;
