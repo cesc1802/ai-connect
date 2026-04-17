@@ -276,11 +276,15 @@ LLMError (base)
 - Dependency injection container
 - Health check endpoint
 
-**Phase 7: WebSocket Support** (Complete)
+**Phase 7: WebSocket Streaming & REST Chat Endpoints** (Complete)
 - WebSocket server with JWT auth on upgrade
 - Heartbeat ping/pong monitoring (30s interval)
 - Client lifecycle management
 - Graceful shutdown handling
+- WebSocket chat handler with command pattern
+- REST POST /chat endpoint (one-shot, non-streaming)
+- Rate limiting middleware (IP-based for login, user-based for chat)
+- Production configuration (trust proxy for reverse proxies)
 
 **Phase 8: Documentation & Examples** (In Progress)
 - README and quick start guide

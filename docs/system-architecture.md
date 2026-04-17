@@ -586,15 +586,18 @@ The HTTP server provides REST API endpoints for the LLM Gateway with built-in au
 
 **Responsibilities:**
 - Create Express application instance
-- Register middleware (JSON body parsing)
+- Register middleware (JSON body parsing, rate limiting)
 - Mount route handlers
+- Configure trust proxy for production
 - Attach error handler
 
 **Request Flow:**
 ```
 HTTP Request
     ↓
-Express Middleware (JSON parsing)
+Express Middleware (JSON parsing, trust proxy)
+    ↓
+Rate Limiting Middleware (if applicable)
     ↓
 Route Handlers (health, auth, chat)
     ↓
@@ -602,6 +605,21 @@ Error Handler (catch-all error handling)
     ↓
 HTTP Response
 ```
+
+**Route Configuration:**
+
+| Route | Method | Auth | Rate Limit | Handler |
+|-------|--------|------|-----------|---------|
+| `/health` | GET | No | No | Health check endpoint |
+| `/auth/login` | POST | No | Yes (IP) | Login with credentials |
+| `/auth` | * | No | No | Auth routes |
+| `/chat` | POST | Yes | Yes (User) | REST chat request |
+| `/chat/ws` | Upgrade | Query Token | No | WebSocket streaming |
+
+**Production Configuration:**
+- Trust proxy: Enabled (respects X-Forwarded-For header)
+- JSON limit: 1MB
+- Rate limiter uses Trust Proxy for accurate IP detection in reverse proxy scenarios
 
 ---
 
@@ -816,7 +834,154 @@ interface HandlerContext {
 
 ---
 
-### Layer 4: Authentication Layer (auth/)
+### Layer 4: REST Chat Endpoint (chat/chat-rest-routes.ts)
+
+**Responsibilities:**
+- Handle synchronous POST /chat requests (one-shot, non-streaming)
+- Validate request body with Zod schemas
+- Execute single chat request and return complete response
+- Delegate to OneShotChatUseCase for business logic
+
+**Request Validation:**
+
+```typescript
+POST /chat
+Content-Type: application/json
+Authorization: Bearer <jwt>
+
+{
+  "model": "claude-sonnet-4",
+  "messages": [
+    { "role": "user", "content": "Hello!" }
+  ],
+  "maxTokens": 4096,
+  "temperature": 0.7
+}
+```
+
+**Schema:**
+- `model`: string, non-empty (required)
+- `messages`: array of message objects (required, min 1)
+  - `role`: "user" | "assistant" | "system" | "tool"
+  - `content`: string or array (for multimodal)
+- `maxTokens`: integer, 1-8192 (optional, default: 4096)
+- `temperature`: number, 0-2 (optional)
+
+**Response Format:**
+
+```json
+{
+  "id": "msg_xxx",
+  "content": "Response text",
+  "toolCalls": [],
+  "usage": {
+    "inputTokens": 10,
+    "outputTokens": 25,
+    "totalTokens": 35
+  },
+  "model": "claude-sonnet-4",
+  "finishReason": "stop",
+  "latencyMs": 345
+}
+```
+
+**Error Responses:**
+
+| Code | Status | Cause |
+|------|--------|-------|
+| `invalid_body` | 400 | Request validation failed |
+| `provider_auth_error` | 401 | Provider authentication failed |
+| `provider_rate_limit` | 429 | Provider rate limit exceeded |
+| `provider_timeout` | 504 | Request timeout |
+| `provider_unavailable` | 503 | Circuit breaker open |
+| `all_providers_failed` | 503 | All fallback providers failed |
+| `model_not_found` | 400 | Model not available |
+| `content_filtered` | 400 | Content policy violation |
+| `internal_error` | 500 | Unexpected server error |
+
+**Difference from WebSocket Streaming:**
+
+| Feature | REST `/chat` | WebSocket `/chat` |
+|---------|--------------|-------------------|
+| Response Type | Complete response | Streaming chunks |
+| Latency | Full request latency | Incremental (lower perceived latency) |
+| Use Case | Quick responses, low throughput | Long-form text, real-time feedback |
+| Connection | Single request-response | Persistent bidirectional |
+| Cancellation | N/A (already complete) | Via abort signal |
+| Backpressure | HTTP-level | Buffered amount tracking |
+
+---
+
+### Layer 5: Rate Limiting (shared/rate-limit.ts)
+
+**Responsibilities:**
+- Apply request throttling to protect endpoints
+- Track requests by IP address (login) or user ID (chat)
+- Return standardized rate limit responses
+- Work correctly in production (reverse proxy) scenarios
+
+**Rate Limit Configuration:**
+
+| Endpoint | Key | Limit | Window | Config Variable |
+|----------|-----|-------|--------|-----------------|
+| `/auth/login` | Client IP | 5 | 15 minutes | `RATE_LIMIT_LOGIN_*` |
+| `/chat` | User ID | 60 | 1 hour | `RATE_LIMIT_CHAT_*` |
+
+**Environment Variables:**
+
+```bash
+RATE_LIMIT_LOGIN_WINDOW_MS=900000      # 15 minutes (default)
+RATE_LIMIT_LOGIN_MAX=5                 # 5 attempts (default)
+RATE_LIMIT_CHAT_WINDOW_MS=3600000      # 1 hour (default)
+RATE_LIMIT_CHAT_MAX=60                 # 60 requests (default)
+```
+
+**Implementation Details:**
+
+```typescript
+// Factory function creates configured middleware
+createRateLimit({
+  windowMs: number,           // Time window in milliseconds
+  max: number,               // Max requests per window
+  keyBy?: "ip" | "user",     // Grouping strategy
+  code?: string,             // Error code (default: "rate_limited")
+  message?: string           // Error message
+})
+
+// For IP-based (login):
+keyGenerator: (req) => req.ip ?? "anon"
+
+// For user-based (chat):
+keyGenerator: (req) => req.user?.id ?? req.ip ?? "anon"
+```
+
+**Response on Rate Limit:**
+
+```json
+HTTP/1.1 429 Too Many Requests
+
+{
+  "code": "rate_limited",
+  "message": "Too many requests"
+}
+
+Headers:
+RateLimit-Limit: 5
+RateLimit-Remaining: 0
+RateLimit-Reset: <unix-timestamp>
+```
+
+**Production Configuration (Trust Proxy):**
+
+When deployed behind a reverse proxy:
+- Express trusts `X-Forwarded-For` header for client IP
+- Set `app.set("trust proxy", 1)` in production
+- Rate limiter uses forwarded IP, not proxy IP
+- Accurate per-client throttling across load balancers
+
+---
+
+### Layer 6: Authentication Layer (auth/)
 
 **Components:**
 
@@ -898,7 +1063,7 @@ interface HandlerContext {
 
 ---
 
-### Layer 5: Data Access Layer (auth/)
+### Layer 7: Data Access Layer (auth/)
 
 **Repository Pattern:**
 
@@ -940,7 +1105,7 @@ interface UserRecord {
 
 ---
 
-### Layer 6: Dependency Injection Layer (container.ts)
+### Layer 8: Dependency Injection Layer (container.ts)
 
 **Container Interface:**
 
@@ -1017,22 +1182,53 @@ Container
 
 ### Configuration Requirements
 
-**Auth-Specific Environment Variables:**
+**HTTP Server Environment Variables:**
+
+| Variable | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `NODE_ENV` | string | No | "development" | Environment type (development/production) |
+| `PORT` | number | No | 3000 | Server listening port |
+| `LOG_LEVEL` | string | No | "info" | Logging level (fatal/error/warn/info/debug/trace) |
+| `JWT_SECRET` | string | Yes | - | Secret key for HS256 signing (min 32 chars) |
+| `JWT_EXPIRES_IN` | string | No | "1h" | Token expiration format |
+| `DEMO_USERS` | string (JSON) | No | "[]" | Initial user seed data as JSON array |
+| `RATE_LIMIT_LOGIN_WINDOW_MS` | number | No | 900000 | Login rate limit window (15 minutes) |
+| `RATE_LIMIT_LOGIN_MAX` | number | No | 5 | Max login attempts per window |
+| `RATE_LIMIT_CHAT_WINDOW_MS` | number | No | 3600000 | Chat rate limit window (1 hour) |
+| `RATE_LIMIT_CHAT_MAX` | number | No | 60 | Max chat requests per window |
+
+**Authentication Environment Variables:**
 
 | Variable | Type | Required | Description |
 |----------|------|----------|-------------|
 | `JWT_SECRET` | string | Yes | Secret key for HS256 signing (min 32 chars recommended) |
-| `JWT_EXPIRES_IN` | string | No | Token expiration format (default: "24h") |
+| `JWT_EXPIRES_IN` | string | No | Token expiration format (default: "1h") |
 | `DEMO_USERS` | string (JSON) | No | Initial user seed data as JSON array |
-| `NODE_ENV` | string | No | Environment type (development/production) |
 
 **Example Configuration:**
 
 ```bash
-JWT_SECRET="your-secret-key-at-least-32-characters"
-JWT_EXPIRES_IN="24h"
-DEMO_USERS='[{"id":"user-1","username":"demo","passwordHash":"$2a$10$..."}]'
+# Basic configuration
 NODE_ENV="development"
+PORT=3000
+LOG_LEVEL="info"
+
+# Auth configuration
+JWT_SECRET="your-secret-key-at-least-32-characters-long"
+JWT_EXPIRES_IN="1h"
+DEMO_USERS='[{"id":"user-1","username":"demo","passwordHash":"$2a$10$..."}]'
+
+# Rate limiting (optional - defaults shown)
+RATE_LIMIT_LOGIN_WINDOW_MS=900000      # 15 minutes
+RATE_LIMIT_LOGIN_MAX=5
+RATE_LIMIT_CHAT_WINDOW_MS=3600000      # 1 hour
+RATE_LIMIT_CHAT_MAX=60
+
+# LLM Provider configuration (if using gateway)
+ANTHROPIC_API_KEY="sk-ant-..."
+OPENAI_API_KEY="sk-..."
+OLLAMA_BASE_URL="http://localhost:11434"
+MINIMAX_API_KEY="..."
 ```
 
 ---
@@ -1095,6 +1291,81 @@ HTTP/1.1 401 Unauthorized
   "code": "missing_token",
   "message": "Authorization header required"
 }
+```
+
+**REST Chat Request (Success):**
+
+```http
+POST /chat HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+{
+  "model": "claude-sonnet-4",
+  "messages": [
+    { "role": "user", "content": "What is 2+2?" }
+  ],
+  "maxTokens": 1024,
+  "temperature": 0.7
+}
+
+HTTP/1.1 200 OK
+{
+  "id": "msg_1234567890",
+  "content": "2+2=4",
+  "toolCalls": [],
+  "usage": {
+    "inputTokens": 12,
+    "outputTokens": 5,
+    "totalTokens": 17
+  },
+  "model": "claude-sonnet-4",
+  "finishReason": "stop",
+  "latencyMs": 234
+}
+```
+
+**REST Chat with Validation Error:**
+
+```http
+POST /chat HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+{
+  "model": "",
+  "messages": []
+}
+
+HTTP/1.1 400 Bad Request
+{
+  "code": "invalid_body",
+  "message": "model: String must contain at least 1 character; messages: Array must contain at least 1 element(s)"
+}
+```
+
+**Rate Limited (Too Many Chat Requests):**
+
+```http
+POST /chat HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+{
+  "model": "claude-sonnet-4",
+  "messages": [{ "role": "user", "content": "Hello" }]
+}
+
+HTTP/1.1 429 Too Many Requests
+{
+  "code": "rate_limited",
+  "message": "Too many chat requests"
+}
+
+Headers:
+RateLimit-Limit: 60
+RateLimit-Remaining: 0
+RateLimit-Reset: 1713549600
 ```
 
 ---

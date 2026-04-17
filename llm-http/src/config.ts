@@ -24,6 +24,10 @@ const configSchema = z.object({
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
   JWT_EXPIRES_IN: z.string().default("1h"),
   DEMO_USERS: demoUsersSchema,
+  RATE_LIMIT_LOGIN_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
+  RATE_LIMIT_LOGIN_MAX: z.coerce.number().default(5),
+  RATE_LIMIT_CHAT_WINDOW_MS: z.coerce.number().default(60 * 60 * 1000),
+  RATE_LIMIT_CHAT_MAX: z.coerce.number().default(60),
 });
 
 export type Config = z.infer<typeof configSchema>;
