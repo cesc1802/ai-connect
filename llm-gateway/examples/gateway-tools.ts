@@ -9,12 +9,19 @@
 import { LLMGateway } from "../src/gateway.js";
 import type { ToolDefinition } from "../src/core/types.js";
 
-// Create gateway with Anthropic provider
 const gateway = new LLMGateway({
-  providers: {
-    anthropic: { apiKey: process.env.ANTHROPIC_API_KEY! },
-  },
-  defaultProvider: "anthropic",
+    providers: {
+        ollama: {
+            baseUrl: "http://100.107.85.81:11434",
+            defaultModel: "qwen2.5:7b-instruct"  // Used when model omitted
+        },
+        // minimax: {
+        //     baseUrl: 'https://api.minimax.io/v1',
+        //     apiKey: process.env.MINIMAX_API_KEY || 'your-api-key-here',
+        //     defaultModel: "MiniMax-M2.7"  // Used when model omitted
+        // },
+    },
+    defaultProvider: "ollama",
 });
 
 // === Define a Tool ===
@@ -47,7 +54,7 @@ const weatherTool: ToolDefinition = {
 // === Chat with Tools ===
 console.log("=== Tool Calling ===");
 const response = await gateway.chat({
-  model: "claude-sonnet-4-20250514",
+  model: "qwen2.5:7b-instruct",
   messages: [{ role: "user", content: "What's the weather in Tokyo?" }],
   maxTokens: 200,
   // Pass the tools the model can use

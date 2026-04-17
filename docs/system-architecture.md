@@ -541,6 +541,38 @@ Circuit Breaker Integration:
 
 ---
 
+## Monorepo Package Architecture
+
+The project is organized as a pnpm monorepo with shared types and multiple runtime packages:
+
+```
+Monorepo (ai-connect)
+├── @ai-connect/shared
+│   └── Shared types
+│       ├── WebSocket protocol (ClientMessage, ServerMessage)
+│       ├── Auth types (User, JWTPayload)
+│       └── Re-exports (ChatMessage, TokenUsage, FinishReason)
+│
+├── llm-gateway
+│   └── Core provider abstraction
+│       ├── Multi-provider support
+│       ├── Resilience patterns
+│       └── Observability
+│
+├── llm-http (planned)
+│   └── REST API wrapper
+│
+└── llm-db (planned)
+    └── Database persistence layer
+```
+
+**Type Sharing Strategy:**
+- `@ai-connect/shared` centralizes common types to prevent duplication
+- Packages depend on `llm-gateway` and `@ai-connect/shared` for type definitions
+- WebSocket protocol types decouple HTTP server from gateway internals
+
+---
+
 ## Deployment Architecture
 
 ### Single Gateway Instance

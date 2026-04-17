@@ -1,10 +1,24 @@
 # LLM Gateway - Codebase Summary
 
-**Last Updated:** April 16, 2026  
+**Last Updated:** April 17, 2026  
 **Current Version:** 1.0.0  
-**Total Modules:** 44 TypeScript files
+**Project Type:** pnpm monorepo (4 packages)
 
-## Directory Structure
+## Monorepo Structure
+
+```
+ai-connect/                        # Root workspace
+├── llm-gateway/                   # Core LLM provider gateway package
+├── llm-shared/                    # Internal shared types (WebSocket, auth)
+├── llm-http/                      # HTTP server wrapper (planned)
+├── llm-db/                        # Database integration (planned)
+└── pnpm-workspace.yaml            # Workspace configuration
+```
+
+## Package Details
+
+### 1. llm-gateway (Core Package)
+Main LLM provider abstraction with 44 TypeScript files:
 
 ```
 llm-gateway/src/
@@ -411,3 +425,66 @@ Each module has `__tests__` directory with vitest suite:
 1. Wrap provider implementing `LLMProvider`
 2. Decorate `chatCompletion()` / `streamCompletion()`
 3. Add to gateway initialization
+
+---
+
+## 2. llm-shared Package
+
+Internal types-only package for shared TypeScript definitions across monorepo packages.
+
+**Purpose:** Centralize common types (WebSocket messages, auth) to prevent duplication and ensure consistency across llm-gateway, llm-http, and future packages.
+
+**Files:**
+```
+llm-shared/src/
+├── types/
+│   ├── ws-messages.ts    # WebSocket protocol (ClientMessage, ServerMessage)
+│   ├── auth.ts           # Auth types (User, JWTPayload)
+│   └── re-exports.ts     # Re-exports from llm-gateway (ChatMessage, TokenUsage, FinishReason)
+├── index.ts              # Public exports
+└── __tests__/            # Type verification tests (if needed)
+```
+
+**Exported Types:**
+
+**WebSocket Protocol (`ClientMessage`, `ServerMessage`):**
+```typescript
+ClientMessage
+  | { type: "chat"; id: string; model: string; messages: ChatMessage[]; maxTokens?: number; temperature?: number }
+  | { type: "ping"; id?: string }
+
+ServerMessage
+  | { type: "chunk"; id: string; delta: string }
+  | { type: "done"; id: string; usage: TokenUsage; finishReason: FinishReason }
+  | { type: "error"; id?: string; code: string; message: string }
+  | { type: "pong"; id?: string }
+```
+
+**Auth Types:**
+- `User`: { id, username }
+- `JWTPayload`: { sub, username, iat, exp }
+
+**Re-exports from llm-gateway:**
+- `ChatMessage`: Unified message format
+- `TokenUsage`: Token count information
+- `FinishReason`: Request completion reason
+
+**Dependency:** Depends on `llm-gateway` workspace package for core types.
+
+**Usage:** Import shared types from `@ai-connect/shared` instead of duplicating definitions across packages.
+
+---
+
+## 3. llm-http Package (Planned)
+
+HTTP server wrapper providing REST API interface to llm-gateway.
+
+**Status:** Pending implementation
+
+---
+
+## 4. llm-db Package (Planned)
+
+Database integration layer for conversation storage and persistence.
+
+**Status:** Pending implementation
