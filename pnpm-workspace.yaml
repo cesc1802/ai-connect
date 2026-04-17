@@ -1,0 +1,7 @@
+packages:
+  - llm-gateway
+  - llm-http
+  - llm-shared
+  - llm-db
+
+onlyBuiltDependencies: esbuild
