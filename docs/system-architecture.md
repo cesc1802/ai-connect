@@ -559,8 +559,12 @@ Monorepo (ai-connect)
 │       ├── Resilience patterns
 │       └── Observability
 │
-├── llm-http (planned)
-│   └── REST API wrapper
+├── llm-http
+│   └── REST API HTTP server
+│       ├── Express application setup
+│       ├── Authentication (JWT, credentials verification)
+│       ├── Dependency injection container
+│       └── Route handlers (health, auth, chat)
 │
 └── llm-db (planned)
     └── Database persistence layer
@@ -570,6 +574,316 @@ Monorepo (ai-connect)
 - `@ai-connect/shared` centralizes common types to prevent duplication
 - Packages depend on `llm-gateway` and `@ai-connect/shared` for type definitions
 - WebSocket protocol types decouple HTTP server from gateway internals
+
+---
+
+## HTTP Server Architecture (llm-http)
+
+The HTTP server provides REST API endpoints for the LLM Gateway with built-in authentication and dependency injection.
+
+### Layer 1: Application Layer (app.ts)
+
+**Responsibilities:**
+- Create Express application instance
+- Register middleware (JSON body parsing)
+- Mount route handlers
+- Attach error handler
+
+**Request Flow:**
+```
+HTTP Request
+    ↓
+Express Middleware (JSON parsing)
+    ↓
+Route Handlers (health, auth, chat)
+    ↓
+Error Handler (catch-all error handling)
+    ↓
+HTTP Response
+```
+
+---
+
+### Layer 2: Authentication Layer (auth/)
+
+**Components:**
+
+1. **JWT Service** (`jwt-service.ts`)
+   - Responsible for token signing and verification
+   - Uses HS256 algorithm for cryptographic signing
+   - Configuration: `JWT_SECRET`, `JWT_EXPIRES_IN`
+   - Methods: `sign(user: User): string`, `verify(token: string): JWTPayload`
+
+2. **Auth Routes** (`auth-routes.ts`)
+   - Endpoint: `POST /auth/login`
+   - Request body: `{ username: string, password: string }`
+   - Validation: Zod schema for request validation
+   - Response: `{ token: string, expiresIn: string }` or error code
+   - Error codes: `invalid_body`, `invalid_credentials`
+
+3. **Auth Middleware** (`auth-middleware.ts`)
+   - Function: `createRequireAuth(container: AppContainer): RequestHandler`
+   - Validates Bearer token in `Authorization` header
+   - Extracts and verifies JWT payload
+   - Sets `req.user` with id and username
+   - Error codes: `missing_token`, `invalid_token`
+
+4. **Credentials Verifier** (`credentials-verifier.ts`)
+   - Verifies username and password against user records
+   - Uses bcryptjs for password hash comparison
+   - Returns `User` object on success, null on failure
+
+**Authentication Flow:**
+
+```
+1. User calls POST /auth/login
+   {
+     "username": "demo",
+     "password": "password"
+   }
+   
+   ↓
+   
+2. Request validation via Zod schema
+   
+   ↓
+   
+3. Credentials Verifier checks username/password
+   - Looks up user by username in repository
+   - Compares password hash using bcryptjs.compare()
+   
+   ↓ Success
+   
+4. JWT Service signs token
+   - Payload: { sub: user.id, username: user.username }
+   - Expires in: config.JWT_EXPIRES_IN
+   - Algorithm: HS256
+   
+   ↓
+   
+5. Return response
+   {
+     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+     "expiresIn": "24h"
+   }
+
+   ↓ Protected Route Access
+   
+6. Client includes in header
+   Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+   
+   ↓
+   
+7. Auth Middleware validates token
+   - Extracts token from header
+   - Verifies signature with JWT_SECRET
+   - Sets req.user if valid
+   
+   ↓ Success
+   
+8. Route handler executes with authenticated user
+```
+
+---
+
+### Layer 3: Data Access Layer (auth/)
+
+**Repository Pattern:**
+
+```typescript
+interface UserRepository {
+  findByUsername(username: string): Promise<UserRecord | null>;
+}
+
+interface UserRecord {
+  id: string;
+  username: string;
+  passwordHash: string;
+}
+```
+
+**Implementations:**
+
+1. **In-Memory Repository** (`in-memory-user-repository.ts`)
+   - Stores users in `Map<string, UserRecord>`
+   - Synchronous lookups (O(1))
+   - Used for development and testing
+   - Populated via `seedUsers(config.DEMO_USERS)`
+
+**User Seeding:**
+
+```typescript
+// From config: DEMO_USERS (JSON string)
+[
+  {
+    "id": "user-1",
+    "username": "demo",
+    "passwordHash": "$2a$10$..." // bcrypt hash
+  }
+]
+
+// Script to generate hashes:
+// tsx scripts/hash-password.ts mypassword
+```
+
+---
+
+### Layer 4: Dependency Injection Layer (container.ts)
+
+**Container Interface:**
+
+```typescript
+export interface AppContainer {
+  config: Config;
+  logger: Logger;
+  chatGateway: ChatGatewayPort;
+  userRepository: UserRepository;
+  credentialsVerifier: CredentialsVerifier;
+  jwtService: JwtService;
+}
+```
+
+**Initialization (`buildContainer`):**
+
+```
+1. Load configuration
+   - NODE_ENV, JWT_SECRET, JWT_EXPIRES_IN
+   - DEMO_USERS (user seed data)
+   - Provider configs for LLM Gateway
+
+2. Instantiate LLM Gateway (if providers configured)
+   - Wrap with LlmGatewayAdapter
+
+3. Instantiate auth services
+   - Create UserRepository from seed data
+   - Create CredentialsVerifier with repository
+   - Create JwtService with secret and expiration
+
+4. Return container with all services
+```
+
+**Service Dependencies:**
+
+```
+Container
+├── config (injected)
+├── logger (injected)
+├── chatGateway
+│   ├── LLMGateway (providers configured)
+│   └── LlmGatewayAdapter (integration)
+├── userRepository
+│   └── InMemoryUserRepository (seeded)
+├── credentialsVerifier
+│   └── depends on: userRepository
+└── jwtService
+    └── depends on: config
+```
+
+---
+
+### Error Handling Architecture
+
+**HTTP Error Response Format:**
+
+```json
+{
+  "code": "error_code",
+  "message": "Human-readable message"
+}
+```
+
+**Auth Errors:**
+
+| Error Code | Status | Cause |
+|-----------|--------|-------|
+| `invalid_body` | 400 | Validation failed (username/password missing) |
+| `invalid_credentials` | 401 | User not found or password mismatch |
+| `missing_token` | 401 | Authorization header missing or invalid format |
+| `invalid_token` | 401 | Token expired, signature invalid, or malformed |
+
+---
+
+### Configuration Requirements
+
+**Auth-Specific Environment Variables:**
+
+| Variable | Type | Required | Description |
+|----------|------|----------|-------------|
+| `JWT_SECRET` | string | Yes | Secret key for HS256 signing (min 32 chars recommended) |
+| `JWT_EXPIRES_IN` | string | No | Token expiration format (default: "24h") |
+| `DEMO_USERS` | string (JSON) | No | Initial user seed data as JSON array |
+| `NODE_ENV` | string | No | Environment type (development/production) |
+
+**Example Configuration:**
+
+```bash
+JWT_SECRET="your-secret-key-at-least-32-characters"
+JWT_EXPIRES_IN="24h"
+DEMO_USERS='[{"id":"user-1","username":"demo","passwordHash":"$2a$10$..."}]'
+NODE_ENV="development"
+```
+
+---
+
+### Request/Response Examples
+
+**Login Success:**
+
+```http
+POST /auth/login HTTP/1.1
+Content-Type: application/json
+
+{
+  "username": "demo",
+  "password": "password123"
+}
+
+HTTP/1.1 200 OK
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTEiLCJ1c2VybmFtZSI6ImRlbW8iLCJpYXQiOjE3MTM0MTUyMDAsImV4cCI6MTcxMzUwMTYwMH0.hO_...",
+  "expiresIn": "24h"
+}
+```
+
+**Login Failure (Invalid Credentials):**
+
+```http
+POST /auth/login HTTP/1.1
+Content-Type: application/json
+
+{
+  "username": "demo",
+  "password": "wrongpassword"
+}
+
+HTTP/1.1 401 Unauthorized
+{
+  "code": "invalid_credentials",
+  "message": "Invalid username or password"
+}
+```
+
+**Protected Route Access:**
+
+```http
+GET /chat HTTP/1.1
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+HTTP/1.1 200 OK
+(route executes with authenticated user context)
+```
+
+**Missing Token:**
+
+```http
+GET /chat HTTP/1.1
+
+HTTP/1.1 401 Unauthorized
+{
+  "code": "missing_token",
+  "message": "Authorization header required"
+}
+```
 
 ---
 

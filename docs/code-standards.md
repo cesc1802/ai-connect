@@ -608,6 +608,232 @@ Before merging:
 - [ ] No dead code or TODO comments
 - [ ] Performance considerations documented
 
+## Authentication & Authorization Patterns
+
+### Repository Pattern
+
+**Purpose:** Abstract data access layer for testability and decoupling from storage implementation.
+
+```typescript
+// ✓ Do: Define interface first
+export interface UserRepository {
+  findByUsername(username: string): Promise<UserRecord | null>;
+  // Other operations: findById, save, etc.
+}
+
+// ✓ Do: Type the record separately
+export interface UserRecord {
+  id: string;
+  username: string;
+  passwordHash: string;
+  // Don't expose password directly
+}
+
+// ✓ Do: Implement with async methods even if in-memory
+export class InMemoryUserRepository implements UserRepository {
+  private readonly users = new Map<string, UserRecord>();
+
+  constructor(initialUsers: UserRecord[]) {
+    initialUsers.forEach(u => this.users.set(u.username, u));
+  }
+
+  async findByUsername(username: string): Promise<UserRecord | null> {
+    return this.users.get(username) ?? null;
+  }
+}
+
+// ✗ Don't: Mix synchronous and asynchronous implementations
+export class UserRepository {
+  findByUsername(username: string): UserRecord | null {
+    // Later someone adds async implementation - now it's confusing
+  }
+}
+```
+
+### Service Initialization Pattern
+
+**Purpose:** Services that depend on repositories or configuration should accept dependencies as constructor parameters.
+
+```typescript
+// ✓ Do: Accept dependencies in constructor
+export class CredentialsVerifier {
+  constructor(
+    private readonly userRepository: UserRepository
+  ) {}
+
+  async verify(username: string, password: string): Promise<User | null> {
+    const record = await this.userRepository.findByUsername(username);
+    if (!record) return null;
+    
+    const isValid = await bcrypt.compare(password, record.passwordHash);
+    return isValid ? { id: record.id, username: record.username } : null;
+  }
+}
+
+// ✓ Do: Services should be stateless or thread-safe
+export class JwtService {
+  private readonly options: jwt.SignOptions;
+
+  constructor(private secret: string, expiresIn: string) {
+    // Immutable configuration
+    this.options = { expiresIn: expiresIn as `${number}${"s" | "m" | "h" | "d"}` };
+  }
+
+  sign(user: User): string {
+    // No side effects, safe to call concurrently
+    return jwt.sign({ sub: user.id, username: user.username }, this.secret, this.options);
+  }
+}
+
+// ✗ Don't: Global state or singletons without injection
+let globalRepository: UserRepository;
+export function setRepository(repo: UserRepository) {
+  globalRepository = repo; // Hard to test
+}
+```
+
+### Middleware Factory Pattern
+
+**Purpose:** Middleware that depends on services should be created via factory functions.
+
+```typescript
+// ✓ Do: Return middleware function from factory
+export function createRequireAuth(container: AppContainer): RequestHandler {
+  return (req, res, next) => {
+    const header = req.headers.authorization;
+
+    if (!header?.startsWith("Bearer ")) {
+      res.status(401).json({
+        code: "missing_token",
+        message: "Authorization header required",
+      });
+      return;
+    }
+
+    try {
+      const token = header.slice(7);
+      const payload = container.jwtService.verify(token);
+      req.user = { id: payload.sub, username: payload.username };
+      next();
+    } catch {
+      res.status(401).json({
+        code: "invalid_token",
+        message: "Token invalid or expired",
+      });
+    }
+  };
+}
+
+// ✓ Do: Use factory to pass dependencies to middleware
+const requireAuth = createRequireAuth(container);
+app.get("/protected", requireAuth, (req, res) => {
+  // req.user is now available
+});
+
+// ✗ Don't: Middleware that directly accesses global state
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const token = req.headers.authorization?.slice(7);
+  const payload = globalJwtService.verify(token); // Global dependency - hard to test
+}
+```
+
+### Request Validation Pattern
+
+**Purpose:** Validate incoming request data before processing.
+
+```typescript
+// ✓ Do: Use Zod for schema validation with safeParse
+import { z } from "zod";
+
+const loginBodySchema = z.object({
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+});
+
+router.post("/login", async (req, res) => {
+  const parsed = loginBodySchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0];
+    res.status(400).json({
+      code: "invalid_body",
+      message: firstIssue?.message ?? "Invalid request body",
+    });
+    return;
+  }
+
+  const { username, password } = parsed.data;
+  // Process validated data
+});
+
+// ✗ Don't: Manual validation or throw-based parsing
+router.post("/login", (req, res) => {
+  if (!req.body.username) throw new Error("Username required"); // No error context
+  if (!req.body.password) throw new Error("Password required");
+});
+```
+
+### Configuration Injection
+
+**Purpose:** Services receive config objects, not read from process.env directly.
+
+```typescript
+// ✓ Do: Centralize config loading
+export interface Config {
+  JWT_SECRET: string;
+  JWT_EXPIRES_IN: string;
+  NODE_ENV: "development" | "production";
+}
+
+// Load and validate once
+function loadConfig(): Config {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET required");
+  
+  return {
+    JWT_SECRET: secret,
+    JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN ?? "24h",
+    NODE_ENV: (process.env.NODE_ENV ?? "development") as any,
+  };
+}
+
+// ✓ Do: Pass config to services
+const config = loadConfig();
+const jwtService = new JwtService(config.JWT_SECRET, config.JWT_EXPIRES_IN);
+
+// ✗ Don't: Services read from process.env directly
+export class JwtService {
+  constructor() {
+    this.secret = process.env.JWT_SECRET!; // Tightly coupled to env
+  }
+}
+```
+
+### Password Hashing Security
+
+**Purpose:** Never store or transmit plaintext passwords.
+
+```typescript
+// ✓ Do: Hash passwords with bcrypt
+import bcrypt from "bcryptjs";
+
+const BCRYPT_ROUNDS = 10;
+const hash = await bcrypt.hash(plaintextPassword, BCRYPT_ROUNDS);
+
+// ✓ Do: Compare against hash, not plaintext
+const isValid = await bcrypt.compare(plaintextPassword, storedHash);
+
+// ✓ Do: Use generated hashes in seed data
+// tsx scripts/hash-password.ts mypassword
+// Output: $2a$10$...hash...
+
+// ✗ Don't: Store plaintext
+const user = { username: "demo", password: "mypassword" };
+
+// ✗ Don't: Compare plaintext to plaintext
+if (inputPassword === user.password) { /* ... */ }
+```
+
 ## Deprecated Patterns
 
 **Avoid:**
@@ -617,3 +843,5 @@ Before merging:
 - Null checks (use optional chaining `?.` and nullish coalescing `??`)
 - Callback hell (use async/await)
 - String-based model names (use provider-scoped naming)
+- Global state in middleware (use dependency injection via factories)
+- Reading from process.env in service constructors (pass config objects)
