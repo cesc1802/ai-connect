@@ -604,7 +604,90 @@ HTTP Response
 
 ---
 
-### Layer 2: Authentication Layer (auth/)
+### Layer 2: WebSocket Layer (ws/)
+
+**Responsibilities:**
+- Establish secured WebSocket connections with JWT authentication
+- Manage client lifecycle (connection, heartbeat, disconnection)
+- Coordinate connection callbacks for message handling
+- Gracefully handle server shutdown
+
+**Components:**
+
+1. **WebSocket Server** (`ws-server.ts`)
+   - Function: `attachWebSocketServer(httpServer: Server, container: AppContainer): WebSocketHandle`
+   - Creates `ws.WebSocketServer` instance with HTTP upgrade handler
+   - Authenticates all upgrade requests via `authenticateUpgrade()`
+   - Attaches user context to `AuthenticatedSocket`
+   - Manages heartbeat interval (30s ping/pong)
+
+2. **Upgrade Authentication** (`ws-upgrade-auth.ts`)
+   - Validates JWT token from query parameter: `ws://server/chat?token=<jwt>`
+   - Extracts token, verifies signature, and returns user or error
+   - Fails upgrade handshake with 401 if token invalid/missing
+
+3. **Type Definitions** (`ws-types.ts`)
+   - `AuthenticatedSocket`: Extends `WebSocket` with `user` and `isAlive` properties
+   - `ConnectionListener`: Callback function for new connections
+
+**WebSocket Lifecycle:**
+
+```
+Client initiates WebSocket upgrade request
+    ↓ ws://server/chat?token=<jwt>
+    
+HTTP upgrade event fires on server
+    ↓
+authenticateUpgrade() validates JWT token
+    ├─ Success: Extract user payload
+    └─ Failure: Write 401, destroy socket, return
+    
+WebSocketServer.handleUpgrade() proceeds
+    ↓
+AuthenticatedSocket created with user context
+    ↓
+"connection" event emitted
+    ├─ Log connection
+    ├─ Set isAlive = true
+    ├─ Call registered listeners
+    └─ Start monitoring for pong
+    
+Heartbeat interval every 30s
+    ├─ Check isAlive for all clients
+    ├─ Terminate if no pong (connection dead)
+    └─ Send ping, set isAlive = false
+    
+Client responds with pong
+    ↓ Set isAlive = true
+    
+Client disconnects
+    ├─ Log disconnection
+    └─ Cleanup resources
+```
+
+**Integration with Shutdown:**
+
+```
+Process receives SIGTERM/SIGINT
+    ↓
+Shutdown handler called
+    ├─ ws.close() → Close all client connections
+    ├─ server.close() → Stop accepting new HTTP/upgrade requests
+    ├─ gateway.dispose() → Cleanup provider resources
+    └─ process.exit(0)
+```
+
+**Error Handling:**
+
+| Error | Cause | Response |
+|-------|-------|----------|
+| Invalid token | Missing or malformed JWT | 401 Unauthorized |
+| Expired token | JWT expired (checked by JwtService) | 401 Unauthorized |
+| Missing query param | Token not in `?token=` parameter | 401 Unauthorized |
+
+---
+
+### Layer 3: Authentication Layer (auth/)
 
 **Components:**
 
@@ -686,7 +769,7 @@ HTTP Response
 
 ---
 
-### Layer 3: Data Access Layer (auth/)
+### Layer 4: Data Access Layer (auth/)
 
 **Repository Pattern:**
 
@@ -728,7 +811,7 @@ interface UserRecord {
 
 ---
 
-### Layer 4: Dependency Injection Layer (container.ts)
+### Layer 5: Dependency Injection Layer (container.ts)
 
 **Container Interface:**
 

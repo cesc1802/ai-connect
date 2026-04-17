@@ -89,7 +89,7 @@ describe("CredentialsVerifier", () => {
 
       await credentialsVerifier.verify("unknown_user", "any_password");
 
-      const dummyHash = "$2a$10$invalidsaltinvalidsaltinvalidsaltinvalidsa";
+      const dummyHash = "\$2a\$10\$BAT6YZKBYfYZE.lVE24YIOQucrZXOcRrgToypYv7pmctqfD6f40X.";
       expect(compareSpy).toHaveBeenCalledWith("any_password", dummyHash);
     });
   });

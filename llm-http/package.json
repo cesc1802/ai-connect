@@ -33,12 +33,14 @@
     "llm-gateway": "workspace:*",
     "pino": "^9.5.0",
     "pino-pretty": "^13.0.0",
+    "ws": "^8.20.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.0.0",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.19.0",
     "typescript": "^5.4.0",
     "vitest": "^2.1.0"

@@ -3,6 +3,7 @@ import { loadConfig } from "./config.js";
 import { createLogger } from "./logger.js";
 import { buildContainer, type AppContainer } from "./container.js";
 import { createApp } from "./app.js";
+import { attachWebSocketServer, type WebSocketHandle } from "./ws/ws-server.js";
 
 async function main() {
   const config = loadConfig();
@@ -11,22 +12,26 @@ async function main() {
   const app = createApp(container);
   const server = http.createServer(app);
 
+  const ws = attachWebSocketServer(server, container);
+
   server.listen(config.PORT, () => {
     logger.info({ port: config.PORT }, "Server listening");
   });
 
-  const shutdown = createShutdownHandler(server, container, logger);
+  const shutdown = createShutdownHandler(server, ws, container, logger);
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 }
 
 function createShutdownHandler(
   server: http.Server,
+  ws: WebSocketHandle,
   container: AppContainer,
   logger: { info: (msg: string) => void }
 ) {
   return async () => {
     logger.info("Shutting down gracefully...");
+    await ws.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await container.chatGateway.dispose();
     process.exit(0);

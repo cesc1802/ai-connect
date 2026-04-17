@@ -270,7 +270,19 @@ LLMError (base)
 - OpenTelemetry tracing
 - Metrics collection and export
 
-**Phase 6: Documentation & Examples** (In Progress)
+**Phase 6: HTTP Server with Authentication** (Complete)
+- Express application and route handlers
+- JWT authentication (login/refresh endpoints)
+- Dependency injection container
+- Health check endpoint
+
+**Phase 7: WebSocket Support** (Complete)
+- WebSocket server with JWT auth on upgrade
+- Heartbeat ping/pong monitoring (30s interval)
+- Client lifecycle management
+- Graceful shutdown handling
+
+**Phase 8: Documentation & Examples** (In Progress)
 - README and quick start guide
 - Complete API documentation
 - Usage examples for all features
