@@ -552,6 +552,28 @@ cd llm-gateway
 ANTHROPIC_API_KEY=sk-... npx tsx examples/gateway-basic.ts
 ```
 
+## Monorepo Packages
+
+This project is a pnpm monorepo with the following packages:
+
+| Package | Description | Status |
+|---------|-------------|--------|
+| **[llm-gateway](./llm-gateway)** | Core LLM provider abstraction with resilience patterns | ✅ Stable |
+| **[@ai-connect/shared](./llm-shared)** | Shared types (WebSocket protocol, auth) | ✅ Stable |
+| **[@ai-connect/http](./llm-http)** | HTTP/WebSocket server with JWT auth | ✅ Stable |
+| **llm-db** | Database persistence layer | 🔜 Planned |
+
+### Package Dependencies
+
+```
+@ai-connect/http
+├── llm-gateway (LLM operations)
+└── @ai-connect/shared (types)
+
+@ai-connect/shared
+└── llm-gateway (re-exports ChatMessage, TokenUsage)
+```
+
 ## Documentation
 
 For more detailed information, see the docs:

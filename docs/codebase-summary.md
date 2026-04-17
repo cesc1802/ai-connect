@@ -475,11 +475,72 @@ ServerMessage
 
 ---
 
-## 3. llm-http Package (Planned)
+## 3. llm-http Package
 
-HTTP server wrapper providing REST API interface to llm-gateway.
+HTTP/WebSocket server providing REST API and real-time streaming interface to the LLM Gateway.
 
-**Status:** Pending implementation
+**Status:** ✅ Implemented
+
+**Files:**
+```
+llm-http/src/
+├── auth/                         # Authentication layer
+│   ├── jwt-service.ts           # JWT signing/verification
+│   ├── credentials-verifier.ts  # Password verification
+│   ├── auth-routes.ts           # POST /auth/login endpoint
+│   ├── auth-middleware.ts       # Bearer token validation
+│   ├── user-repository.ts       # Repository interface
+│   ├── in-memory-user-repository.ts  # In-memory implementation
+│   └── seed-users.ts            # User seeding from config
+│
+├── chat/                         # Chat functionality
+│   ├── chat-gateway-port.ts     # Gateway interface (ports/adapters)
+│   ├── llm-gateway-adapter.ts   # Production adapter
+│   ├── null-gateway-adapter.ts  # Stub for no-provider mode
+│   ├── chat-message-validator.ts # Zod schemas for WS messages
+│   ├── stream-chat-use-case.ts  # Streaming chat orchestration
+│   ├── one-shot-chat-use-case.ts # REST chat orchestration
+│   ├── chat-rest-routes.ts      # POST /chat endpoint
+│   ├── chat-ws-handler.ts       # WebSocket message router
+│   ├── error-mapper.ts          # Error-to-code mapping
+│   └── handlers/                # Command pattern handlers
+│       ├── ws-command-handler.ts # Handler interface
+│       ├── chat-command-handler.ts # Chat message handler
+│       └── ping-command-handler.ts # Ping/pong handler
+│
+├── ws/                           # WebSocket server
+│   ├── ws-server.ts             # WS server with heartbeat
+│   ├── ws-upgrade-auth.ts       # JWT auth on upgrade
+│   └── ws-types.ts              # AuthenticatedSocket type
+│
+├── health/                       # Health endpoint
+│   └── health-routes.ts         # GET /health
+│
+├── shared/                       # Shared utilities
+│   ├── rate-limit.ts            # Rate limiting factory
+│   └── error-handler.ts         # Express error handler
+│
+├── app.ts                        # Express app setup
+├── config.ts                     # Environment config loading
+├── container.ts                  # Dependency injection container
+├── logger.ts                     # Pino logger
+└── index.ts                      # Server entry point
+```
+
+**Key Features:**
+- JWT authentication with bcrypt password hashing
+- REST POST /chat for synchronous requests
+- WebSocket streaming with backpressure handling
+- Rate limiting per IP (login) and per user (chat)
+- Command pattern for extensible message handling
+- Manual DI container (no framework)
+- Ports and adapters for testability
+
+**Testing:**
+- 343 tests passing
+- 92.68% overall coverage
+- No vi.mock() - uses interface-based fakes
+- Test container with FakeChatGateway
 
 ---
 
@@ -487,4 +548,4 @@ HTTP server wrapper providing REST API interface to llm-gateway.
 
 Database integration layer for conversation storage and persistence.
 
-**Status:** Pending implementation
+**Status:** 🔜 Pending implementation
