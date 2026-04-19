@@ -493,7 +493,7 @@ llm-http/src/
 │   ├── in-memory-user-repository.ts  # In-memory implementation
 │   └── seed-users.ts            # User seeding from config
 │
-├── chat/                         # Chat functionality
+├── chat/                         # Legacy chat functionality (Phase 1-3)
 │   ├── chat-gateway-port.ts     # Gateway interface (ports/adapters)
 │   ├── llm-gateway-adapter.ts   # Production adapter
 │   ├── null-gateway-adapter.ts  # Stub for no-provider mode
@@ -508,7 +508,33 @@ llm-http/src/
 │       ├── chat-command-handler.ts # Chat message handler
 │       └── ping-command-handler.ts # Ping/pong handler
 │
-├── ws/                           # WebSocket server
+├── chat-v2/                      # Event-driven chat (Phase 5+)
+│   ├── websocket-server.ts      # WebSocket server with event subscriptions
+│   ├── connection-session.ts    # Single client session lifecycle
+│   ├── chat-handler.ts          # Event-driven gateway bridge
+│   ├── gateway-chunk-adapter.ts # Normalizes LLM chunks to stream events
+│   ├── client-message-schema.ts # Zod schemas (c.chat.send, c.chat.abort, c.ping)
+│   ├── server-message-types.ts  # TypeScript defs (s.chat.started, s.chat.token, etc.)
+│   └── index.ts                 # Public exports
+│
+├── events/                       # Event system (Phase 1)
+│   ├── event-bus.ts             # Pub/sub event broker
+│   └── __tests__/               # Event bus tests
+│
+├── transport/                    # Message transport layer (Phase 2)
+│   ├── connection-registry.ts   # Registry interface
+│   ├── local-connection-registry.ts  # In-memory implementation
+│   ├── message-router.ts        # Message routing interface
+│   ├── local-message-router.ts  # In-memory router implementation
+│   └── __tests__/               # Transport tests
+│
+├── repositories/                 # Data persistence (Phase 3)
+│   ├── in-memory-conversation-repo.ts  # Conversation storage
+│   ├── in-memory-message-repo.ts       # Message storage
+│   ├── index.ts                 # Exports
+│   └── __tests__/               # Repository tests
+│
+├── ws/                           # Legacy WebSocket server (Phase 1)
 │   ├── ws-server.ts             # WS server with heartbeat
 │   ├── ws-upgrade-auth.ts       # JWT auth on upgrade
 │   └── ws-types.ts              # AuthenticatedSocket type
@@ -527,20 +553,44 @@ llm-http/src/
 └── index.ts                      # Server entry point
 ```
 
-**Key Features:**
+**Key Features (Legacy Phases 1-3):**
 - JWT authentication with bcrypt password hashing
 - REST POST /chat for synchronous requests
-- WebSocket streaming with backpressure handling
+- WebSocket /ws/chat legacy endpoint with backpressure handling
 - Rate limiting per IP (login) and per user (chat)
 - Command pattern for extensible message handling
 - Manual DI container (no framework)
 - Ports and adapters for testability
 
+**Event-Driven Architecture (Phases 4-5):**
+- EventBus pub/sub system for decoupled message flow
+- ConnectionRegistry tracks active WebSocket sessions
+- Local message routing for inter-module communication
+- In-memory conversation and message repositories
+- New `/ws/chat/v2` endpoint with event-driven protocol
+- ChatHandler bridges LLM gateway to event streaming
+- ConnectionSession manages per-client lifecycle
+
+**Client Message Types (v2):**
+- `c.chat.send`: Start streaming chat (conversationId optional)
+- `c.chat.abort`: Cancel active stream by requestId
+- `c.ping`: Keepalive ping
+
+**Server Message Types (v2):**
+- `s.chat.started`: Stream initiated (requestId, conversationId, model, startedAt)
+- `s.chat.token`: Token received (requestId, delta, index)
+- `s.chat.completed`: Stream finished (requestId, usage, finishReason, latencyMs)
+- `s.chat.failed`: Error occurred (requestId, code, message)
+- `s.chat.aborted`: Stream cancelled (requestId, reason)
+- `s.conversation.created`: New conversation (full Conversation object)
+- `s.error`: Protocol error (code, message)
+- `s.pong`: Pong response
+
 **Testing:**
-- 343 tests passing
-- 92.68% overall coverage
+- 400+ tests passing (includes event-driven tests)
+- 90%+ overall coverage
 - No vi.mock() - uses interface-based fakes
-- Test container with FakeChatGateway
+- Test containers for all layers (auth, chat, events, transport)
 
 ---
 

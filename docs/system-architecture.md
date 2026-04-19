@@ -1,7 +1,7 @@
 # LLM Gateway - System Architecture
 
-**Last Updated:** April 17, 2026  
-**Version:** 1.1.0
+**Last Updated:** April 19, 2026  
+**Version:** 1.2.0
 
 ## High-Level Architecture
 
@@ -608,13 +608,14 @@ HTTP Response
 
 **Route Configuration:**
 
-| Route | Method | Auth | Rate Limit | Handler |
-|-------|--------|------|-----------|---------|
-| `/health` | GET | No | No | Health check endpoint |
-| `/auth/login` | POST | No | Yes (IP) | Login with credentials |
-| `/auth` | * | No | No | Auth routes |
-| `/chat` | POST | Yes | Yes (User) | REST chat request |
-| `/chat/ws` | Upgrade | Query Token | No | WebSocket streaming |
+| Route | Method | Auth | Rate Limit | Handler | Status |
+|-------|--------|------|-----------|---------|--------|
+| `/health` | GET | No | No | Health check endpoint | ✅ |
+| `/auth/login` | POST | No | Yes (IP) | Login with credentials | ✅ |
+| `/auth` | * | No | No | Auth routes | ✅ |
+| `/chat` | POST | Yes | Yes (User) | REST chat request | ✅ |
+| `/ws/chat` | Upgrade | Query Token | No | Legacy WebSocket streaming | ✅ |
+| `/ws/chat/v2` | Upgrade | Query Token | No | Event-driven WebSocket (new) | ✅ Phase 5 |
 
 **Production Configuration:**
 - Trust proxy: Enabled (respects X-Forwarded-For header)
@@ -831,6 +832,43 @@ interface HandlerContext {
 // New chat aborts previous stream
 // Stream aborted on connection close
 ```
+
+---
+
+### Layer 3b: Event-Driven WebSocket v2 (`/ws/chat/v2`)
+
+**Status:** ✅ Implemented (Phase 5, April 19, 2026)
+
+**Quick Reference:** See [`event-driven-architecture.md`](./event-driven-architecture.md) for full details.
+
+**Key Components:**
+- `websocket-server.ts`: HTTP upgrade handler for `/ws/chat/v2`
+- `connection-session.ts`: Per-client state machine with event subscriptions
+- `chat-handler.ts`: Event-driven gateway bridge (stream lifecycle)
+- `client-message-schema.ts`: Zod validation (c.chat.send, c.chat.abort, c.ping)
+- `server-message-types.ts`: TypeScript defs (s.chat.started, s.chat.token, s.chat.completed, etc.)
+
+**Message Flow:**
+```
+Client c.chat.send → ConnectionSession → EventBus (chat.requested)
+                                             ↓
+                                        ChatHandler
+                                             ↓
+                                    gateway.stream()
+                                             ↓
+                                    EventBus (s.chat.*)
+                                             ↓
+                                    ConnectionSession → Client
+```
+
+**Differences from v1 (`/ws/chat`):**
+
+| Aspect | v1 | v2 |
+|--------|-----|-----|
+| Pattern | Command handlers | Event-driven pub/sub |
+| Persistence | None | Conversation/message repos |
+| Messages | `chat`, `chunk`, `done` | `c.chat.send`, `s.chat.token`, etc. |
+| Abort | Signal-based | Explicit `c.chat.abort` message |
 
 ---
 
@@ -1367,6 +1405,20 @@ RateLimit-Limit: 60
 RateLimit-Remaining: 0
 RateLimit-Reset: 1713549600
 ```
+
+---
+
+## Event-Driven v2 Architecture (New - Phase 5+)
+
+For detailed documentation on the event-driven WebSocket v2 endpoint, see [`event-driven-architecture.md`](./event-driven-architecture.md).
+
+**Quick Reference:**
+- **Endpoint:** `/ws/chat/v2` (JWT authenticated)
+- **Architecture:** Event-driven pub/sub with EventBus
+- **Client Messages:** `c.chat.send`, `c.chat.abort`, `c.ping`
+- **Server Messages:** `s.chat.*`, `s.conversation.*`, `s.error`, `s.pong`
+- **Persistence:** Conversation and message repositories (in-memory, upgradeable to database)
+- **Key Components:** EventBus, ConnectionRegistry, ChatHandler, ConnectionSession
 
 ---
 

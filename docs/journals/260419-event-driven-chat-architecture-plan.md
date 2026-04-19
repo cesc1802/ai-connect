@@ -3,7 +3,7 @@
 **Date**: 2026-04-19 19:58 (Asia/Saigon)
 **Severity**: Medium
 **Component**: Architecture / Planning
-**Status**: Plan Locked
+**Status**: Phases 1-5 Complete (6-7 In Progress)
 
 ## Session Outcome
 
@@ -33,9 +33,16 @@ Rejected YAGNI shortcut on transport abstraction. User approved interface tax (~
 ## Artifacts
 
 - Brainstorm report: `plans/reports/brainstorm-260419-1958-event-driven-chat-architecture.md`
-- Plan directory: `plans/260419-1958-event-driven-chat-architecture/`
-  - `plan.md` + 7 phase files (1361 LOC total)
-  - Phases 5 & 7 exceed 150-LOC guidance (233 & 216 respectively) — kept long for integration detail
+- Plan directory: `docs/journals/`
+  - `260419-event-driven-chat-architecture-plan.md` (this overview)
+  - Phase files (journals, status updated as completed):
+    - ✅ `260419-phase-01-event-driven-foundation.md` — Resolved
+    - ✅ `260419-phase-02-local-connection-manager.md` — Resolved
+    - ✅ `260419-phase-03-in-memory-repositories.md` — Resolved
+    - ✅ `260419-phase-04-chat-handler-event-driven.md` — Resolved
+    - ✅ `260419-phase-05-websocket-server-v2-bridge.md` — **Resolved** (4 modules, 48 tests, e2e verified)
+    - `260419-phase-06-side-effect-handlers.md` — Pending
+    - `260419-phase-07-integration-and-documentation.md` — Pending
 - 7 hydrated tasks (#1–#7) in shared TaskList
 
 ## Unresolved Questions for Next Phase
