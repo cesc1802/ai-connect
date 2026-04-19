@@ -14,7 +14,7 @@ node_modules
 .idea/
 
 # testing
-/coverage
+coverage/
 
 # next.js
 /.next/
