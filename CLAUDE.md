@@ -2,6 +2,42 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Coding Principles
+```
+## Coding Principles
+
+Four guardrails against the most common LLM coding failures (source: Andrej Karpathy).
+
+### 1. Think Before Coding
+- State assumptions explicitly before writing code
+- When multiple interpretations exist, present them — never pick silently
+- Push back if a simpler approach exists
+- If something is unclear, stop and ask before proceeding
+
+### 2. Simplicity First
+- No features beyond what was explicitly asked
+- No abstractions for single-use code
+- No "flexibility" or "configurability" not requested
+- No error handling for impossible scenarios
+- Self-test: "Would a senior engineer say this is overcomplicated?" → If yes, rewrite
+- If 200 lines could be 50, rewrite it
+
+### 3. Surgical Changes
+- Do not improve adjacent code, comments, or formatting
+- Do not refactor things that aren't broken
+- Match existing style even if you'd do it differently
+- If you notice unrelated dead code: **mention it, don't delete it**
+- When YOUR changes create orphans (unused imports/vars/funcs): clean those up
+- Litmus test: every changed line must trace directly to the user's request
+
+### 4. Goal-Driven Execution
+- Transform tasks into verifiable goals with success criteria
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+- Multi-step plans must have explicit verify conditions per step
+```
+
 ## Role & Responsibilities
 
 Your role is to analyze user requirements, delegate tasks to appropriate sub-agents, and ensure cohesive delivery of features that meet specifications and architectural standards.
@@ -91,3 +127,4 @@ We keep all important docs in `./docs` folder and keep updating them, structure 
 ```
 
 **IMPORTANT:** *MUST READ* and *MUST COMPLY* all *INSTRUCTIONS* in project `./CLAUDE.md`, especially *WORKFLOWS* section is *CRITICALLY IMPORTANT*, this rule is *MANDATORY. NON-NEGOTIABLE. NO EXCEPTIONS. MUST REMEMBER AT ALL TIMES!!!*
+
