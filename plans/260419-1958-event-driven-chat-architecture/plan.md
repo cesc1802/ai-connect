@@ -4,7 +4,7 @@ description: "EventBus + decoupled handlers + new /ws/chat/v2 endpoint, alongsid
 status: in-progress
 priority: P1
 effort: 24h
-progress: 29%
+progress: 50%
 branch: master
 tags: [event-driven, websocket, eventbus, chat, llm-http]
 created: 2026-04-19
@@ -31,7 +31,7 @@ Introduce typed in-process EventBus + decoupled side-effect handlers in `llm-htt
 | 1 | Foundation: event types + EventBus + transport interfaces | [phase-01-foundation-event-types-and-bus.md](phase-01-foundation-event-types-and-bus.md) | 3h | completed |
 | 2 | Local connection manager (registry + router) | [phase-02-local-connection-manager.md](phase-02-local-connection-manager.md) | 2h | completed |
 | 3 | In-memory repositories (conversation + message) | [phase-03-in-memory-repositories.md](phase-03-in-memory-repositories.md) | 2h | completed |
-| 4 | ChatHandler — event-driven gateway streaming | [phase-04-chat-handler-event-driven.md](phase-04-chat-handler-event-driven.md) | 5h | pending |
+| 4 | ChatHandler — event-driven gateway streaming | [phase-04-chat-handler-event-driven.md](phase-04-chat-handler-event-driven.md) | 5h | completed |
 | 5 | `/ws/chat/v2` server bridge | [phase-05-websocket-server-v2-bridge.md](phase-05-websocket-server-v2-bridge.md) | 5h | pending |
 | 6 | Side-effect handlers (Persistence, Title, Cost, Metrics) | [phase-06-side-effect-handlers.md](phase-06-side-effect-handlers.md) | 5h | pending |
 | 7 | Composition root wiring + `/api/metrics` + docs | [phase-07-composition-root-metrics-and-docs.md](phase-07-composition-root-metrics-and-docs.md) | 2h | pending |
