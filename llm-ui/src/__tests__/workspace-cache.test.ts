@@ -12,6 +12,7 @@ describe('resetWorkspaceScopedCaches', () => {
     qc.setQueryData(['conversations', 'cv_1', 'messages'], { messages: [] });
     qc.setQueryData(['admin', 'workspace', 'templates'], { etag: 'x', data: {} });
     qc.setQueryData(['workspaces', 'wsp_a', 'resources'], { providers: [] });
+    qc.setQueryData(['workspaces', 'list'], { workspaces: [] });
     qc.setQueryData(['unrelated'], { keep: true });
     useStreamingStore.getState().start('msg_1', 'cv_1');
   });
@@ -29,9 +30,10 @@ describe('resetWorkspaceScopedCaches', () => {
     expect(qc.getQueryData(['workspaces', 'wsp_a', 'resources'])).toBeUndefined();
   });
 
-  it('leaves unrelated cache entries intact', () => {
+  it('leaves unrelated and workspace-list entries intact', () => {
     resetWorkspaceScopedCaches(qc);
     expect(qc.getQueryData(['unrelated'])).toEqual({ keep: true });
+    expect(qc.getQueryData(['workspaces', 'list'])).toEqual({ workspaces: [] });
   });
 
   it('clears streaming store', () => {

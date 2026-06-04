@@ -1,20 +1,24 @@
-import type { QueryClient } from '@tanstack/react-query';
+import type { QueryClient, QueryKey } from '@tanstack/react-query';
 import { useStreamingStore } from '@/stores/streaming-store';
 
 /**
- * Workspace-scoped query-key prefixes removed when switching workspaces.
- * BR-077: switching active workspace must purge per-workspace caches and
- * abort any in-flight chat stream.
+ * Predicate matching any cache entry that should be discarded when the active
+ * workspace changes. BR-077: switching must purge per-workspace caches and
+ * abort the in-flight chat stream. The workspace list itself (`['workspaces',
+ * 'list']`) is intentionally preserved so the switcher keeps working.
  */
-export const WORKSPACE_SCOPED_QUERY_PREFIXES = [
-  ['conversations'],
-  ['admin', 'workspace', 'templates'],
-  ['workspaces'],
-] as const;
+export function isWorkspaceScopedQueryKey(key: QueryKey): boolean {
+  if (!Array.isArray(key) || key.length === 0) return false;
+  const [head, second] = key as readonly unknown[];
+  if (head === 'conversations') return true;
+  if (head === 'admin' && second === 'workspace') return true;
+  if (head === 'workspaces' && typeof second === 'string' && second !== 'list') return true;
+  return false;
+}
 
 export function resetWorkspaceScopedCaches(queryClient: QueryClient): void {
-  for (const prefix of WORKSPACE_SCOPED_QUERY_PREFIXES) {
-    queryClient.removeQueries({ queryKey: prefix as unknown as readonly unknown[] });
-  }
+  queryClient.removeQueries({
+    predicate: (query) => isWorkspaceScopedQueryKey(query.queryKey),
+  });
   useStreamingStore.getState().clear();
 }
