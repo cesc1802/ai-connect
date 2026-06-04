@@ -53,7 +53,7 @@ function TemplateRow({
     <button
       type="button"
       onClick={() => onApply(template)}
-      className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-1.5 text-left text-sm transition-colors"
+      className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex w-full flex-col items-start gap-0.5 rounded-md px-3 py-1.5 text-left text-sm transition-colors motion-reduce:transition-none"
     >
       <span className="truncate font-medium">{template.name}</span>
     </button>

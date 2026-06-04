@@ -12,7 +12,17 @@ import 'vitest-axe/extend-expect';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ComponentType, ReactNode } from 'react';
 
+import userEvent from '@testing-library/user-event';
+
 import { UsersTab } from '@/components/admin/org/users-tab';
+import { WorkspaceSwitcher } from '@/components/sidebar/workspace-switcher';
+import { SidebarAccountMenu } from '@/components/sidebar/sidebar-account-menu';
+import { OrgSections } from '@/components/sidebar/org-sections';
+import { ChatSection } from '@/components/sidebar/chat-section';
+import { TemplatesSection } from '@/components/sidebar/templates-section';
+import { WorkspaceSettingsNav } from '@/components/sidebar/workspace-settings-nav';
+import { useActiveWorkspaceStore } from '@/stores/active-workspace-store';
+import { useSidebarUiStore } from '@/stores/sidebar-ui-store';
 import { ProvidersTab } from '@/components/admin/org/providers-tab';
 import { TemplatesTab } from '@/components/admin/org/templates-tab';
 import { MembersTab } from '@/components/admin/workspace/members-tab';
@@ -44,7 +54,23 @@ vi.mock('@tanstack/react-router', async () => {
   const actual = await vi.importActual<
     typeof import('@tanstack/react-router')
   >('@tanstack/react-router');
-  return { ...actual, useNavigate: () => () => {} };
+  return {
+    ...actual,
+    useNavigate: () => () => {},
+    useParams: () => ({}),
+    Link: ({
+      children,
+      to,
+      ...rest
+    }: {
+      children: ReactNode;
+      to?: string;
+    } & Record<string, unknown>) => (
+      <a href={typeof to === 'string' ? to : '#'} {...(rest as object)}>
+        {children}
+      </a>
+    ),
+  };
 });
 
 interface Wait {
@@ -168,6 +194,144 @@ describe('Admin a11y sweep', () => {
           </Wrapper>,
         );
         await tab.wait.ready();
+        await expectNoSeriousAxe(container);
+      });
+    }
+  }
+});
+
+interface SidebarSpec {
+  name: string;
+  render: () => Promise<HTMLElement>;
+}
+
+function seedWorkspace(role: 'admin' | 'member' = 'admin'): void {
+  useActiveWorkspaceStore
+    .getState()
+    .setActiveWorkspace('wsp_acme', role);
+  useSidebarUiStore.setState({ context: 'workspace', collapsed: false });
+}
+
+function seedOrg(): void {
+  useActiveWorkspaceStore.getState().setActiveWorkspace('wsp_acme', 'admin');
+  useSidebarUiStore.setState({ context: 'org', collapsed: false });
+}
+
+describe('Sidebar a11y sweep', () => {
+  afterEach(() => {
+    useActiveWorkspaceStore.getState().clear();
+    useSidebarUiStore.setState({ context: 'workspace', collapsed: false });
+  });
+
+  const sidebarSpecs: SidebarSpec[] = [
+    {
+      name: 'workspace-switcher-open',
+      render: async () => {
+        seedWorkspace();
+        const client = makeClient();
+        const { container } = render(
+          <Wrapper client={client}>
+            <WorkspaceSwitcher />
+          </Wrapper>,
+        );
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole('button', { name: /switch workspace/i }));
+        await screen.findByRole('menu');
+        return container;
+      },
+    },
+    {
+      name: 'sidebar-account-menu-open',
+      render: async () => {
+        seedWorkspace();
+        const client = makeClient();
+        const { container } = render(
+          <Wrapper client={client}>
+            <SidebarAccountMenu />
+          </Wrapper>,
+        );
+        const user = userEvent.setup();
+        await user.click(
+          await screen.findByRole('button', { name: /open account menu/i }),
+        );
+        await screen.findByRole('menu');
+        return container;
+      },
+    },
+    {
+      name: 'org-sections-admin',
+      render: async () => {
+        seedOrg();
+        const client = makeClient();
+        const { container } = render(
+          <Wrapper client={client}>
+            <OrgSections />
+          </Wrapper>,
+        );
+        await screen.findByText(/workspaces/i);
+        return container;
+      },
+    },
+    {
+      name: 'workspace-chat-section',
+      render: async () => {
+        seedWorkspace();
+        const client = makeClient();
+        const { container } = render(
+          <Wrapper client={client}>
+            <ChatSection />
+          </Wrapper>,
+        );
+        await waitFor(() =>
+          expect(
+            screen.queryByRole('searchbox', { name: /search conversations/i }),
+          ).toBeInTheDocument(),
+        );
+        return container;
+      },
+    },
+    {
+      name: 'workspace-templates-section',
+      render: async () => {
+        seedWorkspace();
+        const client = makeClient();
+        const { container } = render(
+          <Wrapper client={client}>
+            <TemplatesSection />
+          </Wrapper>,
+        );
+        await waitFor(
+          () => {
+            const heading = screen.queryByText(/suggested for you/i);
+            const empty = screen.queryByText(/no templates yet/i);
+            expect(heading || empty).toBeTruthy();
+          },
+          { timeout: 3000 },
+        );
+        return container;
+      },
+    },
+    {
+      name: 'workspace-settings-nav-admin',
+      render: async () => {
+        seedWorkspace();
+        const client = makeClient();
+        const { container } = render(
+          <Wrapper client={client}>
+            <WorkspaceSettingsNav />
+          </Wrapper>,
+        );
+        await screen.findByRole('link', { name: 'Members' });
+        return container;
+      },
+    },
+  ];
+
+  for (const spec of sidebarSpecs) {
+    for (const theme of ['light', 'dark'] as const) {
+      it(`${spec.name} / ${theme} - zero serious/critical axe violations`, async () => {
+        applyTheme(theme);
+        const container = await spec.render();
         await expectNoSeriousAxe(container);
       });
     }

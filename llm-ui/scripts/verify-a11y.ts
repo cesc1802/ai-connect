@@ -27,6 +27,26 @@ const steps: Step[] = [
     args: ['exec', 'vitest', '--run', 'src/__tests__/a11y-sweep.test.tsx'],
   },
   {
+    name: 'sidebar-token-lint',
+    cmd: 'pnpm',
+    args: ['exec', 'vitest', '--run', 'src/__tests__/sidebar-token-lint.test.ts'],
+  },
+  {
+    name: 'sidebar-responsive',
+    cmd: 'pnpm',
+    args: ['exec', 'vitest', '--run', 'src/__tests__/sidebar-responsive.test.tsx'],
+  },
+  {
+    name: 'sidebar-reduced-motion',
+    cmd: 'pnpm',
+    args: [
+      'exec',
+      'vitest',
+      '--run',
+      'src/__tests__/sidebar-reduced-motion.test.tsx',
+    ],
+  },
+  {
     name: 'lint',
     cmd: 'pnpm',
     args: ['run', 'lint'],
