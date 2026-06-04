@@ -150,3 +150,44 @@ export const PutWsTemplatesRequest = z.object({
   templates: z.array(PutWsTemplatePair).max(100),
 });
 export type PutWsTemplatesRequest = z.infer<typeof PutWsTemplatesRequest>;
+
+// --- workspace members ---
+export const WsMemberRow = z.object({
+  id: z.string(),
+  email: z.string().email(),
+  role: WorkspaceRole,
+  joinedAt: z.string().datetime(),
+});
+export type WsMemberRow = z.infer<typeof WsMemberRow>;
+
+export const WsMemberListResponse = z.object({
+  members: z.array(WsMemberRow),
+});
+export type WsMemberListResponse = z.infer<typeof WsMemberListResponse>;
+
+export const InviteWsMemberRequest = z.object({
+  email: z.string().email('Enter a valid email'),
+  role: WorkspaceRole,
+});
+export type InviteWsMemberRequest = z.infer<typeof InviteWsMemberRequest>;
+
+export const ChangeWsMemberRoleRequest = z.object({
+  role: WorkspaceRole,
+});
+export type ChangeWsMemberRoleRequest = z.infer<
+  typeof ChangeWsMemberRoleRequest
+>;
+
+// --- workspace roles ---
+export const WsRoleCatalogueEntry = z.object({
+  role: WorkspaceRole,
+  description: z.string(),
+});
+export type WsRoleCatalogueEntry = z.infer<typeof WsRoleCatalogueEntry>;
+
+export const WsRoleListResponse = z.object({
+  roles: z.array(WsRoleCatalogueEntry),
+});
+export type WsRoleListResponse = z.infer<typeof WsRoleListResponse>;
+
+export const LAST_ADMIN_CODE = 'last_admin' as const;
