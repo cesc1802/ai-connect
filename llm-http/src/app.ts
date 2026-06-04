@@ -6,10 +6,13 @@ import { createChatRestRoutes } from "./chat/chat-rest-routes.js";
 import {
   createRequireAuth,
   createRequireOrgAdmin,
+  createRequireWorkspaceAdmin,
 } from "./auth/auth-middleware.js";
 import { createOrgUsersRoutes } from "./admin/org/users-routes.js";
 import { createOrgTemplatesRouter } from "./admin/org/templates-routes.js";
 import { createOrgProvidersRoutes } from "./admin/org/providers-routes.js";
+import { createWsMembersRoutes } from "./admin/workspace/members-routes.js";
+import { createWsRolesRoutes } from "./admin/workspace/roles-routes.js";
 import { createRedactLogMiddleware } from "./admin/redact-log-middleware.js";
 import { createRateLimit } from "./shared/rate-limit.js";
 import { createErrorHandler } from "./shared/error-handler.js";
@@ -65,6 +68,18 @@ export function createApp(container: AppContainer): Express {
     requireAuth,
     createRequireOrgAdmin(),
     createOrgProvidersRoutes(container.orgProvidersService),
+  );
+  app.use(
+    "/admin/workspace/members",
+    requireAuth,
+    createRequireWorkspaceAdmin(),
+    createWsMembersRoutes(container),
+  );
+  app.use(
+    "/admin/workspace/roles",
+    requireAuth,
+    createRequireWorkspaceAdmin(),
+    createWsRolesRoutes(),
   );
 
   app.use(createErrorHandler(container.logger, isProd));

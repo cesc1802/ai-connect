@@ -25,6 +25,14 @@ import { OrgTemplateService } from "./admin/org/templates-service.js";
 import { ApiKeyVault } from "./admin/org/api-key-vault.js";
 import { InMemoryProvidersRepository } from "./admin/org/providers-repo.js";
 import { OrgProvidersService } from "./admin/org/providers-service.js";
+import {
+  InMemoryWsMembersRepository,
+  type WsMemberRow,
+} from "./admin/workspace/members-repo.js";
+import {
+  DefaultWsMembersService,
+  type WsMembersService,
+} from "./admin/workspace/members-service.js";
 import { StreamChatUseCase } from "./chat/stream-chat-use-case.js";
 import { OneShotChatUseCase } from "./chat/one-shot-chat-use-case.js";
 import { ChatCommandHandler } from "./chat/handlers/chat-command-handler.js";
@@ -42,6 +50,7 @@ export interface AppContainer {
   orgUsersService: OrgUsersService;
   orgTemplateService: OrgTemplateService;
   orgProvidersService: OrgProvidersService;
+  wsMembersService: WsMembersService;
   apiKeyVault: ApiKeyVault;
   streamChatUseCase: StreamChatUseCase;
   oneShotChatUseCase: OneShotChatUseCase;
@@ -89,6 +98,12 @@ export function buildContainer(config: Config, logger: Logger): AppContainer {
     auditEmitter,
     logger,
   );
+  const wsMembersRepo = new InMemoryWsMembersRepository(seedWsMembers());
+  const wsMembersService = new DefaultWsMembersService(
+    wsMembersRepo,
+    auditEmitter,
+    logger,
+  );
 
   const streamChatUseCase = new StreamChatUseCase(chatGateway);
   const oneShotChatUseCase = new OneShotChatUseCase(chatGateway);
@@ -110,11 +125,40 @@ export function buildContainer(config: Config, logger: Logger): AppContainer {
     orgUsersService,
     orgTemplateService,
     orgProvidersService,
+    wsMembersService,
     apiKeyVault,
     streamChatUseCase,
     oneShotChatUseCase,
     wsCommandHandlers,
   };
+}
+
+function seedWsMembers(): Map<string, WsMemberRow[]> {
+  return new Map([
+    [
+      "demo-ws",
+      [
+        {
+          id: "seed-ws-admin",
+          email: "ada@demo.example",
+          role: "admin",
+          joinedAt: "2026-01-15T09:00:00.000Z",
+        },
+        {
+          id: "seed-ws-member",
+          email: "grace@demo.example",
+          role: "member",
+          joinedAt: "2026-02-08T14:30:00.000Z",
+        },
+        {
+          id: "seed-ws-viewer",
+          email: "alan@demo.example",
+          role: "viewer",
+          joinedAt: "2026-03-01T10:00:00.000Z",
+        },
+      ],
+    ],
+  ]);
 }
 
 function seedOrgUsers(): Map<string, OrgUserRow[]> {
