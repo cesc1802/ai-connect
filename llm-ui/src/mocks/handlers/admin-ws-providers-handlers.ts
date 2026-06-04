@@ -4,7 +4,7 @@ import type { WsProviderItem } from '@/schemas/admin';
 const seedAvailable: WsProviderItem[] = [
   { id: 'p-openai', displayName: 'OpenAI prod', providerKind: 'openai' },
   { id: 'p-anthropic', displayName: 'Anthropic prod', providerKind: 'anthropic' },
-  { id: 'p-azure', displayName: 'Azure prod', providerKind: 'azure_openai' },
+  { id: 'p-azure', displayName: 'Azure prod', providerKind: 'azure-openai' },
 ];
 
 let pool: WsProviderItem[] = [...seedAvailable];

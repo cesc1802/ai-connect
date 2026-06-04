@@ -7,7 +7,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
 import { WsTemplatesTab } from '@/components/admin/workspace/ws-templates-tab';
-import { server } from '@/mocks/server';
 import {
   resetWsTemplatesHandlers,
   setWsTemplatesBound,
