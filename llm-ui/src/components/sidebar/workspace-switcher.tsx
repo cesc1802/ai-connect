@@ -89,7 +89,7 @@ export function WorkspaceSwitcher() {
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onSelect={() => void navigate({ to: '/workspaces/pick' })}
+              onSelect={() => void navigate({ to: '/workspaces/new' })}
             >
               <Plus className="size-4" />
               <span>New Workspace</span>

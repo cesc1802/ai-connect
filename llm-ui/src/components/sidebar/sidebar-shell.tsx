@@ -1,6 +1,5 @@
 import * as React from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ThemeToggle } from '@/components/theme/theme-toggle';
 import { cn } from '@/lib/utils';
 import { useSidebarCollapsed } from '@/stores/sidebar-ui-store';
 import { CollapseToggle } from './collapse-toggle';
@@ -42,11 +41,6 @@ export function SidebarShell({
       <div className="border-sidebar-border flex items-center gap-2 border-b px-2 py-2">
         <CollapseToggle controlsId={SECTIONS_ID} />
         {!railMode && <div className="min-w-0 flex-1">{header}</div>}
-        {!railMode && (
-          <div className="shrink-0">
-            <ThemeToggle />
-          </div>
-        )}
       </div>
 
       <ScrollArea className="flex-1">

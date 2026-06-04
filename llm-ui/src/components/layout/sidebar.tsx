@@ -3,6 +3,8 @@ import { WorkspaceSwitcher } from '@/components/sidebar/workspace-switcher';
 import { SidebarOrgRow } from '@/components/sidebar/sidebar-org-row';
 import { BackToWorkspace } from '@/components/sidebar/back-to-workspace';
 import { WorkspaceSections } from '@/components/sidebar/workspace-sections';
+import { OrgSections } from '@/components/sidebar/org-sections';
+import { SidebarAccountMenu } from '@/components/sidebar/sidebar-account-menu';
 import { useSidebarContext } from '@/stores/sidebar-ui-store';
 
 type SidebarProps = {
@@ -27,8 +29,9 @@ export function Sidebar({ onItemSelect, variant }: SidebarProps) {
           </div>
         )
       }
+      account={<SidebarAccountMenu />}
     >
-      {isOrg ? null : <WorkspaceSections onItemSelect={onItemSelect} />}
+      {isOrg ? <OrgSections /> : <WorkspaceSections onItemSelect={onItemSelect} />}
     </SidebarShell>
   );
 }
