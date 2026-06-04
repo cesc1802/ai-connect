@@ -4,19 +4,21 @@ import type { SessionState } from '@/router/routes/root-route';
 
 /**
  * Derives the router-level SessionState from the auth + active-workspace stores.
- * Returns null when the user is not authenticated, which triggers the
- * authenticated-route guard to redirect to /login.
+ * workspaceRole comes from the active-workspace store (seeded from GET /workspaces);
+ * falls back to the auth user's static role only on cold start before the store hydrates.
+ * Client role is UX-only; server re-checks every admin endpoint.
  */
 export function useRouterSession(): SessionState | null {
   const accessToken = useAuthStore((s) => s.accessToken);
   const user = useAuthStore((s) => s.user);
-  const workspaceId = useActiveWorkspaceStore((s) => s.activeWorkspaceId);
+  const activeWorkspaceId = useActiveWorkspaceStore((s) => s.activeWorkspaceId);
+  const activeWorkspaceRole = useActiveWorkspaceStore((s) => s.activeWorkspaceRole);
 
   if (!accessToken || !user) return null;
   return {
     userId: user.id,
-    workspaceId,
+    workspaceId: activeWorkspaceId ?? user.workspaceId,
     orgRole: user.orgRole,
-    workspaceRole: user.workspaceRole,
+    workspaceRole: activeWorkspaceRole ?? user.workspaceRole,
   };
 }

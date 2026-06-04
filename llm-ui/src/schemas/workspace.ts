@@ -15,6 +15,8 @@ export const Workspace = z.object({
   name: z.string(),
   slug: z.string(),
   role: WorkspaceRole,
+  orgId: z.string().optional(),
+  orgName: z.string().optional(),
 });
 export type Workspace = z.infer<typeof Workspace>;
 

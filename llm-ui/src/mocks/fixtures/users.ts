@@ -30,3 +30,17 @@ export const DEMO_OWNER_PASSWORD = 'ownerpass123';
 
 export const DEMO_OWNER_ACCESS_TOKEN = 'demo.access.owner.v1';
 export const DEMO_OWNER_REFRESH_COOKIE = 'demo.refresh.owner.v1';
+
+/**
+ * Org-member (non-admin) fixture used to exercise admin gating in tests.
+ * Not wired into auth handlers; tests seed the auth store directly.
+ */
+export const DEMO_MEMBER_USER: SessionUser = {
+  id: 'usr_demo_member_001',
+  email: 'member@ai-connect.local',
+  displayName: 'Member User',
+  orgId: 'org-demo',
+  orgRole: 'member',
+  workspaceId: 'wsp_research',
+  workspaceRole: 'member',
+};

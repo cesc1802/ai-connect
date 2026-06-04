@@ -35,7 +35,7 @@ function renderPage() {
 describe('WorkspacePickPage', () => {
   beforeEach(() => {
     navigateSpy.mockReset();
-    useActiveWorkspaceStore.getState().setWorkspace(null);
+    useActiveWorkspaceStore.getState().clear();
     useAuthStore.getState().setSession({
       accessToken: DEMO_ACCESS_TOKEN,
       user: DEMO_USER,
@@ -44,7 +44,7 @@ describe('WorkspacePickPage', () => {
   });
   afterEach(() => {
     useAuthStore.getState().clear();
-    useActiveWorkspaceStore.getState().setWorkspace(null);
+    useActiveWorkspaceStore.getState().clear();
   });
 
   it('auto-selects and redirects to /chat when there is a single workspace', async () => {

@@ -26,7 +26,7 @@ export function useLogout() {
     },
     onMutate: () => {
       useAuthStore.getState().clear();
-      useActiveWorkspaceStore.getState().setWorkspace(null);
+      useActiveWorkspaceStore.getState().clear();
       queryClient.clear();
     },
     onSettled: () => {

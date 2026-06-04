@@ -17,7 +17,7 @@ import type { Workspace } from '@/schemas/workspace';
 
 export function WorkspacePickPage() {
   const navigate = useNavigate();
-  const setWorkspace = useActiveWorkspaceStore((s) => s.setWorkspace);
+  const setActiveWorkspace = useActiveWorkspaceStore((s) => s.setActiveWorkspace);
   const { data, isPending, isError, refetch, isFetching } = useWorkspaces();
 
   const workspaces = data?.workspaces ?? [];
@@ -26,12 +26,12 @@ export function WorkspacePickPage() {
   // Auto-select singleton workspace and route to /chat.
   useEffect(() => {
     if (!onlyOne) return;
-    setWorkspace(onlyOne.id);
+    setActiveWorkspace(onlyOne.id, onlyOne.role);
     void navigate({ to: '/chat' });
-  }, [onlyOne, setWorkspace, navigate]);
+  }, [onlyOne, setActiveWorkspace, navigate]);
 
   const handleSelect = (workspace: Workspace) => {
-    setWorkspace(workspace.id);
+    setActiveWorkspace(workspace.id, workspace.role);
     void navigate({ to: '/chat' });
   };
 

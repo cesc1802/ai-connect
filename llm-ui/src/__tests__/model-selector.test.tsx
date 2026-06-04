@@ -49,7 +49,7 @@ function renderSelector(opts?: {
   });
   const workspaceId = opts?.workspaceId === undefined ? WS : opts.workspaceId;
   if (workspaceId != null) {
-    useActiveWorkspaceStore.getState().setWorkspace(workspaceId);
+    useActiveWorkspaceStore.getState().setActiveWorkspace(workspaceId, 'admin');
     qc.setQueryData<WorkspaceResourcesResponse>(
       workspaceResourcesQueryKey(workspaceId),
       opts?.data ?? FIXTURE,
@@ -70,12 +70,12 @@ beforeEach(() => {
     expiresInSec: DEMO_EXPIRES_IN_SEC,
   });
   useChatModelStore.getState().clearAll();
-  useActiveWorkspaceStore.getState().setWorkspace(null);
+  useActiveWorkspaceStore.getState().clear();
 });
 
 afterEach(() => {
   useChatModelStore.getState().clearAll();
-  useActiveWorkspaceStore.getState().setWorkspace(null);
+  useActiveWorkspaceStore.getState().clear();
   useAuthStore.getState().clear();
 });
 
