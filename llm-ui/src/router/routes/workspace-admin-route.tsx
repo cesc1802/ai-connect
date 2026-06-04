@@ -5,7 +5,6 @@ import { adminRoute } from './admin-route';
 import { AdminConsoleShell } from '@/components/admin/admin-console-shell';
 import { AdminTabs } from '@/components/admin/admin-tabs';
 import { DataTableSkeleton } from '@/components/admin/data-table-skeleton';
-import { EmptyState } from '@/components/admin/empty-state';
 
 const MembersTab = React.lazy(() =>
   import('@/components/admin/workspace/members-tab').then((m) => ({
@@ -31,14 +30,11 @@ const WsTemplatesTab = React.lazy(() =>
   })),
 );
 
-function WorkspaceAdminPlaceholder({ label }: { label: string }) {
-  return (
-    <EmptyState
-      heading={`${label} coming soon`}
-      body="This section will be populated by a follow-up phase."
-    />
-  );
-}
+const QuotasTab = React.lazy(() =>
+  import('@/components/admin/workspace/quotas-tab').then((m) => ({
+    default: m.QuotasTab,
+  })),
+);
 
 function WorkspaceAdminShell() {
   return (
@@ -91,7 +87,11 @@ function WorkspaceAdminShell() {
           {
             value: 'quotas',
             label: 'Quotas',
-            content: <WorkspaceAdminPlaceholder label="Quotas" />,
+            content: (
+              <React.Suspense fallback={<DataTableSkeleton columnCount={2} />}>
+                <QuotasTab />
+              </React.Suspense>
+            ),
           },
         ]}
       />
