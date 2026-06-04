@@ -1,9 +1,17 @@
+import * as React from 'react';
 import { createRoute, redirect } from '@tanstack/react-router';
 
 import { adminRoute } from './admin-route';
 import { AdminConsoleShell } from '@/components/admin/admin-console-shell';
 import { AdminTabs } from '@/components/admin/admin-tabs';
+import { DataTableSkeleton } from '@/components/admin/data-table-skeleton';
 import { EmptyState } from '@/components/admin/empty-state';
+
+const UsersTab = React.lazy(() =>
+  import('@/components/admin/org/users-tab').then((m) => ({
+    default: m.UsersTab,
+  })),
+);
 
 function OrgAdminPlaceholder({ label }: { label: string }) {
   return (
@@ -29,7 +37,11 @@ function OrgAdminShell() {
           {
             value: 'users',
             label: 'Users',
-            content: <OrgAdminPlaceholder label="Users" />,
+            content: (
+              <React.Suspense fallback={<DataTableSkeleton columnCount={4} />}>
+                <UsersTab />
+              </React.Suspense>
+            ),
           },
           {
             value: 'providers',
