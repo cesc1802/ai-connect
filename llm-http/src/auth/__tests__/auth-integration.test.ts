@@ -1,9 +1,16 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import bcrypt from "bcryptjs";
-import { JwtService } from "../jwt-service.js";
+import { JwtService, type JwtSignContext } from "../jwt-service.js";
 import { CredentialsVerifier } from "../credentials-verifier.js";
 import { InMemoryUserRepository } from "../in-memory-user-repository.js";
 import type { UserRecord } from "../user-repository.js";
+
+const ctx: JwtSignContext = {
+  org: "demo-org",
+  orgRole: "member",
+  workspace: null,
+  workspaceRole: null,
+};
 
 describe("Auth Integration Tests", () => {
   let jwtService: JwtService;
@@ -20,11 +27,15 @@ describe("Auth Integration Tests", () => {
         id: "user-1",
         username: "alice",
         passwordHash: hashedPassword,
+        org: "demo-org",
+        orgRole: "member",
       },
       {
         id: "user-2",
         username: "bob",
         passwordHash: await bcrypt.hash("bobs_password", 10),
+        org: "demo-org",
+        orgRole: "member",
       },
     ];
 
@@ -43,7 +54,7 @@ describe("Auth Integration Tests", () => {
       expect(user?.username).toBe("alice");
 
       // Step 2: Generate token
-      const token = jwtService.sign(user!);
+      const token = jwtService.sign(user!, ctx);
       expect(token).toBeDefined();
       expect(typeof token).toBe("string");
       expect(token.split(".")).toHaveLength(3);
@@ -57,10 +68,10 @@ describe("Auth Integration Tests", () => {
     it("should generate different tokens for same user on subsequent logins", async () => {
       const user = await credentialsVerifier.verify("bob", "bobs_password");
 
-      const token1 = jwtService.sign(user!);
+      const token1 = jwtService.sign(user!, ctx);
       // Delay to ensure different iat (JWT uses second precision)
       await new Promise((resolve) => setTimeout(resolve, 1100));
-      const token2 = jwtService.sign(user!);
+      const token2 = jwtService.sign(user!, ctx);
 
       expect(token1).not.toBe(token2);
 
@@ -74,7 +85,7 @@ describe("Auth Integration Tests", () => {
 
     it("should have correct token expiration", async () => {
       const user = await credentialsVerifier.verify("alice", "correct_password");
-      const token = jwtService.sign(user!);
+      const token = jwtService.sign(user!, ctx);
       const payload = jwtService.verify(token);
 
       const expiresInSeconds = payload.exp - payload.iat;
@@ -93,7 +104,7 @@ describe("Auth Integration Tests", () => {
       const user = await credentialsVerifier.verify("alice", "wrong_password");
 
       expect(() => {
-        if (user) jwtService.sign(user);
+        if (user) jwtService.sign(user, ctx);
       }).not.toThrow();
 
       expect(user).toBeNull();
@@ -159,7 +170,7 @@ describe("Auth Integration Tests", () => {
         "alice",
         "correct_password"
       );
-      const token = jwtService.sign(validUser!);
+      const token = jwtService.sign(validUser!, ctx);
 
       // Tamper with token
       const parts = token.split(".");
@@ -179,7 +190,7 @@ describe("Auth Integration Tests", () => {
         "alice",
         "correct_password"
       );
-      const token = jwtService.sign(validUser!);
+      const token = jwtService.sign(validUser!, ctx);
 
       const differentService = new JwtService("different_secret_key_32_chars_", "1h");
 
@@ -192,7 +203,7 @@ describe("Auth Integration Tests", () => {
       const user = await credentialsVerifier.verify("alice", "correct_password");
       expect(user).not.toBeNull();
 
-      const token = jwtService.sign(user!);
+      const token = jwtService.sign(user!, ctx);
       const payload = jwtService.verify(token);
 
       expect(payload.sub).toBe(user!.id);
@@ -201,7 +212,7 @@ describe("Auth Integration Tests", () => {
 
     it("should preserve user identity through token", async () => {
       const user = await credentialsVerifier.verify("bob", "bobs_password");
-      const token = jwtService.sign(user!);
+      const token = jwtService.sign(user!, ctx);
       const payload = jwtService.verify(token);
 
       expect(payload.username).toBe("bob");
@@ -222,7 +233,7 @@ describe("Auth Integration Tests", () => {
       expect(user).not.toBeNull();
 
       // 3. Generate JWT token
-      const token = jwtService.sign(user!);
+      const token = jwtService.sign(user!, ctx);
       expect(token).toBeDefined();
 
       // 4. Client stores token and uses it in Authorization header
@@ -254,7 +265,7 @@ describe("Auth Integration Tests", () => {
 
       // Should not reach token generation step
       if (user) {
-        const token = jwtService.sign(user);
+        const token = jwtService.sign(user, ctx);
         expect(token).toBeUndefined();
       }
     });
@@ -266,7 +277,7 @@ describe("Auth Integration Tests", () => {
         "correct_password"
       );
 
-      const expiredToken = expiredService.sign(user!);
+      const expiredToken = expiredService.sign(user!, ctx);
 
       // Wait a bit and try to verify
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -303,7 +314,7 @@ describe("Auth Integration Tests", () => {
         "alice",
         "correct_password"
       );
-      const token = jwtService.sign(user!);
+      const token = jwtService.sign(user!, ctx);
       const payload = jwtService.verify(token);
 
       expect(payload).toHaveProperty("sub"); // subject

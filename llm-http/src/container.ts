@@ -1,4 +1,5 @@
 import { LLMGateway } from "llm-gateway";
+import type { AuditEmitter } from "@ai-connect/shared";
 import type { Config } from "./config.js";
 import { extractProviderConfigs } from "./config.js";
 import type { Logger } from "./logger.js";
@@ -10,6 +11,7 @@ import { InMemoryUserRepository } from "./auth/in-memory-user-repository.js";
 import { seedUsers } from "./auth/seed-users.js";
 import { CredentialsVerifier } from "./auth/credentials-verifier.js";
 import { JwtService } from "./auth/jwt-service.js";
+import { StdoutAuditEmitter } from "./admin/audit-emitter-stdout.js";
 import { StreamChatUseCase } from "./chat/stream-chat-use-case.js";
 import { OneShotChatUseCase } from "./chat/one-shot-chat-use-case.js";
 import { ChatCommandHandler } from "./chat/handlers/chat-command-handler.js";
@@ -23,6 +25,7 @@ export interface AppContainer {
   userRepository: UserRepository;
   credentialsVerifier: CredentialsVerifier;
   jwtService: JwtService;
+  auditEmitter: AuditEmitter;
   streamChatUseCase: StreamChatUseCase;
   oneShotChatUseCase: OneShotChatUseCase;
   wsCommandHandlers: WsCommandHandlerMap;
@@ -49,6 +52,7 @@ export function buildContainer(config: Config, logger: Logger): AppContainer {
   const userRepository = new InMemoryUserRepository(seedUsers(config.DEMO_USERS));
   const credentialsVerifier = new CredentialsVerifier(userRepository);
   const jwtService = new JwtService(config.JWT_SECRET, config.JWT_EXPIRES_IN);
+  const auditEmitter = new StdoutAuditEmitter(logger);
 
   const streamChatUseCase = new StreamChatUseCase(chatGateway);
   const oneShotChatUseCase = new OneShotChatUseCase(chatGateway);
@@ -66,6 +70,7 @@ export function buildContainer(config: Config, logger: Logger): AppContainer {
     userRepository,
     credentialsVerifier,
     jwtService,
+    auditEmitter,
     streamChatUseCase,
     oneShotChatUseCase,
     wsCommandHandlers,

@@ -2,15 +2,32 @@ import { z } from "zod";
 import "dotenv/config";
 import type { UserRecord } from "./auth/user-repository.js";
 
+const demoUserRecordSchema = z.object({
+  id: z.string(),
+  username: z.string(),
+  passwordHash: z.string(),
+  org: z.string().default("demo-org"),
+  orgRole: z.enum(["admin", "member"]).default("member"),
+  workspace: z.string().nullable().optional(),
+  workspaceRole: z.enum(["owner", "admin", "member", "viewer"]).nullable().optional(),
+});
+
 const demoUsersSchema = z
   .string()
   .default("[]")
-  .transform((s) => {
+  .transform((s, ctx): UserRecord[] => {
+    let raw: unknown;
     try {
-      return JSON.parse(s) as UserRecord[];
+      raw = JSON.parse(s);
     } catch {
-      return [] as UserRecord[];
+      return [];
     }
+    const parsed = z.array(demoUserRecordSchema).safeParse(raw);
+    if (!parsed.success) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid DEMO_USERS shape" });
+      return z.NEVER;
+    }
+    return parsed.data;
   });
 
 const configSchema = z.object({
