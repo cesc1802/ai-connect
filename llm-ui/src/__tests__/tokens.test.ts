@@ -9,7 +9,7 @@ const css = readFileSync(cssPath, 'utf8');
 
 describe('design tokens (index.css)', () => {
   it('declares the terracotta-orange primary in :root', () => {
-    expect(css).toMatch(/:root\s*\{[^}]*--primary:\s*oklch\(0\.62 0\.19 38\)/s);
+    expect(css).toMatch(/:root\s*\{[^}]*--primary:\s*oklch\(0\.58 0\.19 38\)/s);
   });
 
   it('declares a .dark theme block', () => {
