@@ -191,3 +191,40 @@ export const WsRoleListResponse = z.object({
 export type WsRoleListResponse = z.infer<typeof WsRoleListResponse>;
 
 export const LAST_ADMIN_CODE = 'last_admin' as const;
+
+// --- workspace quotas ---
+export const RoleQuotaRow = z.object({
+  role: WorkspaceRole,
+  maxRequests: z.number().int().min(0),
+  overCount: z.number().int().min(0),
+});
+export type RoleQuotaRow = z.infer<typeof RoleQuotaRow>;
+
+export const QuotasListResponse = z.object({
+  rows: z.array(RoleQuotaRow),
+});
+export type QuotasListResponse = z.infer<typeof QuotasListResponse>;
+
+export const QuotaWarning = z.object({
+  role: WorkspaceRole,
+  overCount: z.number().int().min(0),
+});
+export type QuotaWarning = z.infer<typeof QuotaWarning>;
+
+export const QuotasPatchResponse = z.object({
+  rows: z.array(RoleQuotaRow),
+  warnings: z.array(QuotaWarning).optional(),
+});
+export type QuotasPatchResponse = z.infer<typeof QuotasPatchResponse>;
+
+export const PatchQuotaRow = z.object({
+  role: WorkspaceRole,
+  maxRequests: z.number().int().min(0),
+});
+export type PatchQuotaRow = z.infer<typeof PatchQuotaRow>;
+
+export const PatchQuotasRequest = z.object({
+  rows: z.array(PatchQuotaRow).min(1).max(20),
+  force: z.boolean().optional(),
+});
+export type PatchQuotasRequest = z.infer<typeof PatchQuotasRequest>;
