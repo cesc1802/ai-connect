@@ -37,6 +37,11 @@ import { InMemoryWsProviderBindingsRepo } from "./admin/workspace/ws-providers-r
 import { WsProvidersService } from "./admin/workspace/ws-providers-service.js";
 import { InMemoryWsTemplateBindingsRepo } from "./admin/workspace/ws-templates-repo.js";
 import { WsTemplatesService } from "./admin/workspace/ws-templates-service.js";
+import { InMemoryWsQuotasRepo } from "./admin/workspace/quotas-repo.js";
+import {
+  StubUsageCounter,
+  WsQuotasService,
+} from "./admin/workspace/quotas-service.js";
 import { StreamChatUseCase } from "./chat/stream-chat-use-case.js";
 import { OneShotChatUseCase } from "./chat/one-shot-chat-use-case.js";
 import { ChatCommandHandler } from "./chat/handlers/chat-command-handler.js";
@@ -57,6 +62,7 @@ export interface AppContainer {
   wsMembersService: WsMembersService;
   wsProvidersService: WsProvidersService;
   wsTemplatesService: WsTemplatesService;
+  wsQuotasService: WsQuotasService;
   apiKeyVault: ApiKeyVault;
   streamChatUseCase: StreamChatUseCase;
   oneShotChatUseCase: OneShotChatUseCase;
@@ -124,6 +130,13 @@ export function buildContainer(config: Config, logger: Logger): AppContainer {
     auditEmitter,
     logger,
   );
+  const wsQuotasRepo = new InMemoryWsQuotasRepo();
+  const wsQuotasService = new WsQuotasService(
+    wsQuotasRepo,
+    new StubUsageCounter(),
+    auditEmitter,
+    logger,
+  );
 
   const streamChatUseCase = new StreamChatUseCase(chatGateway);
   const oneShotChatUseCase = new OneShotChatUseCase(chatGateway);
@@ -148,6 +161,7 @@ export function buildContainer(config: Config, logger: Logger): AppContainer {
     wsMembersService,
     wsProvidersService,
     wsTemplatesService,
+    wsQuotasService,
     apiKeyVault,
     streamChatUseCase,
     oneShotChatUseCase,

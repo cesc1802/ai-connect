@@ -15,6 +15,7 @@ import { createWsMembersRoutes } from "./admin/workspace/members-routes.js";
 import { createWsRolesRoutes } from "./admin/workspace/roles-routes.js";
 import { createWsProvidersRoutes } from "./admin/workspace/ws-providers-routes.js";
 import { createWsTemplatesRoutes } from "./admin/workspace/ws-templates-routes.js";
+import { createWsQuotasRoutes } from "./admin/workspace/quotas-routes.js";
 import { createRedactLogMiddleware } from "./admin/redact-log-middleware.js";
 import { createRateLimit } from "./shared/rate-limit.js";
 import { createErrorHandler } from "./shared/error-handler.js";
@@ -94,6 +95,12 @@ export function createApp(container: AppContainer): Express {
     requireAuth,
     createRequireWorkspaceAdmin(),
     createWsTemplatesRoutes(container.wsTemplatesService),
+  );
+  app.use(
+    "/admin/workspace/quotas",
+    requireAuth,
+    createRequireWorkspaceAdmin(),
+    createWsQuotasRoutes(container.wsQuotasService),
   );
 
   app.use(createErrorHandler(container.logger, isProd));
