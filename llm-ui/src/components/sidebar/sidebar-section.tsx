@@ -9,10 +9,12 @@ import { useSidebarCollapsed } from '@/stores/sidebar-ui-store';
 
 type SidebarSectionProps = {
   title: string;
-  /** lucide icon component used in the rail popover trigger. */
+  /** lucide icon component used in the rail popover trigger and expanded header. */
   icon?: React.ComponentType<{ className?: string }>;
   /** Section body shown in expanded mode and inside the rail popover. */
   children: React.ReactNode;
+  /** Trailing action(s) rendered on the expanded header row (e.g. New, All). */
+  headerAction?: React.ReactNode;
   className?: string;
 };
 
@@ -24,6 +26,7 @@ export function SidebarSection({
   title,
   icon: Icon,
   children,
+  headerAction,
   className,
 }: SidebarSectionProps) {
   const collapsed = useSidebarCollapsed();
@@ -52,9 +55,13 @@ export function SidebarSection({
 
   return (
     <section className={cn('flex flex-col gap-1 px-2 py-2', className)}>
-      <h3 className="text-sidebar-foreground/70 px-2 text-xs font-semibold uppercase tracking-wide">
-        {title}
-      </h3>
+      <div className="flex items-center justify-between px-2">
+        <h3 className="text-sidebar-foreground/70 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide">
+          {Icon ? <Icon className="size-3.5" /> : null}
+          {title}
+        </h3>
+        {headerAction ? <div className="shrink-0">{headerAction}</div> : null}
+      </div>
       <div className="flex flex-col">{children}</div>
     </section>
   );

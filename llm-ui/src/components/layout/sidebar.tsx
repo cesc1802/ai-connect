@@ -1,8 +1,8 @@
 import { SidebarShell } from '@/components/sidebar/sidebar-shell';
-import { ConversationSidebar } from '@/components/chat/conversation-sidebar';
 import { WorkspaceSwitcher } from '@/components/sidebar/workspace-switcher';
 import { SidebarOrgRow } from '@/components/sidebar/sidebar-org-row';
 import { BackToWorkspace } from '@/components/sidebar/back-to-workspace';
+import { WorkspaceSections } from '@/components/sidebar/workspace-sections';
 import { useSidebarContext } from '@/stores/sidebar-ui-store';
 
 type SidebarProps = {
@@ -28,7 +28,7 @@ export function Sidebar({ onItemSelect, variant }: SidebarProps) {
         )
       }
     >
-      <ConversationSidebar onItemSelect={onItemSelect} />
+      {isOrg ? null : <WorkspaceSections onItemSelect={onItemSelect} />}
     </SidebarShell>
   );
 }

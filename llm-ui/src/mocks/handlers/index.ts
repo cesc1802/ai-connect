@@ -11,6 +11,7 @@ import { adminWsRolesHandlers } from './admin-ws-roles-handlers';
 import { adminWsProvidersHandlers } from './admin-ws-providers-handlers';
 import { adminWsTemplatesHandlers } from './admin-ws-templates-handlers';
 import { adminWsQuotasHandlers } from './admin-ws-quotas-handlers';
+import { templatesHandlers } from './templates-handlers';
 
 export const handlers = [
   ...authHandlers,
@@ -26,4 +27,5 @@ export const handlers = [
   ...adminWsProvidersHandlers,
   ...adminWsTemplatesHandlers,
   ...adminWsQuotasHandlers,
+  ...templatesHandlers,
 ];

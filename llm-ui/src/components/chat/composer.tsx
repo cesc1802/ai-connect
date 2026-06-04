@@ -1,7 +1,8 @@
-import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useComposerDraftStore } from '@/stores/composer-draft-store';
 
 type ComposerProps = {
   disabled?: boolean;
@@ -22,10 +23,35 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 ) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const pendingDraft = useComposerDraftStore((s) => s.pending);
+  const consumeDraft = useComposerDraftStore((s) => s.consume);
+  const lastAppliedDraftId = useRef<number>(0);
 
   useImperativeHandle(ref, () => ({
     focus: () => textareaRef.current?.focus(),
   }));
+
+  useEffect(() => {
+    if (!pendingDraft) return;
+    if (pendingDraft.id === lastAppliedDraftId.current) return;
+    lastAppliedDraftId.current = pendingDraft.id;
+    const consumed = consumeDraft();
+    if (!consumed) return;
+
+    setText((prev) => {
+      if (consumed.mode === 'seed') return prev.length === 0 ? consumed.text : prev;
+      const ta = textareaRef.current;
+      const sep = prev.length > 0 && !prev.endsWith('\n') ? '\n\n' : '';
+      const cursor = ta?.selectionStart ?? prev.length;
+      const before = prev.slice(0, cursor);
+      const after = prev.slice(cursor);
+      const beforeSep = before.length > 0 && !before.endsWith('\n') ? '\n\n' : '';
+      const afterSep = after.length > 0 && !after.startsWith('\n') ? '\n\n' : '';
+      if (cursor === prev.length) return prev + sep + consumed.text;
+      return before + beforeSep + consumed.text + afterSep + after;
+    });
+    queueMicrotask(() => textareaRef.current?.focus());
+  }, [pendingDraft, consumeDraft]);
 
   useLayoutEffect(() => {
     const el = textareaRef.current;
