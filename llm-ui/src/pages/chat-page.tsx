@@ -5,6 +5,7 @@ import { Composer, type ComposerHandle } from '@/components/chat/composer';
 import { ConnectionStatusBadge } from '@/components/chat/connection-status-badge';
 import { EmptyState } from '@/components/chat/empty-state';
 import { MessageThread } from '@/components/chat/message-thread';
+import { ModelSelector } from '@/components/chat/model-selector';
 import { useChatSession } from '@/hooks/use-chat-session';
 import { useActiveWorkspaceStore } from '@/stores/active-workspace-store';
 import { useStreamingStore } from '@/stores/streaming-store';
@@ -55,10 +56,13 @@ export function ChatPage() {
   return (
     <div className="grid h-full grid-rows-[auto_1fr_auto]">
       <div className="border-border bg-background flex items-center justify-between gap-2 border-b px-4 py-2">
-        <div className="text-sm font-medium">
+        <div className="min-w-0 truncate text-sm font-medium">
           {conversationId ? 'Conversation' : 'New conversation'}
         </div>
-        <ConnectionStatusBadge status={status} />
+        <div className="flex min-w-0 items-center gap-2">
+          <ModelSelector className="min-w-0" />
+          <ConnectionStatusBadge status={status} />
+        </div>
       </div>
       <div className="min-h-0">
         {hasContent ? (

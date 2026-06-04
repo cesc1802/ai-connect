@@ -7,6 +7,7 @@ import {
   type WSConnectionState,
 } from '@/api/ws-client';
 import { useAuthStore } from '@/stores/auth-store';
+import { useChatModelStore } from '@/stores/chat-model-store';
 import { useStreamingStore } from '@/stores/streaming-store';
 import type { WsServerEvent } from '@/schemas/ws-events';
 import type { Message, MessageListResponse } from '@/schemas/conversation';
@@ -310,11 +311,16 @@ export function useChatSession(): ChatSession {
 
       s.pendingByConversationId.set(input.conversationId, { tempUserId: tempUserMessageId });
 
+      // Read via getState so the value is captured at send-time, not at render-time.
+      const sel = useChatModelStore.getState().getModel(input.workspaceId);
+      const modelHint = sel ? `${sel.providerId}/${sel.modelId}` : undefined;
+
       s.client.send({
         type: 'c.chat.send',
         conversationId: input.conversationId,
         workspaceId: input.workspaceId,
         message: { role: 'user', content: input.text },
+        ...(modelHint ? { modelHint } : {}),
       });
 
       return { tempUserMessageId, conversationCacheKey: cacheKey };
