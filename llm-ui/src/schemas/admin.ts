@@ -63,3 +63,39 @@ export type UpdateOrgProviderRequest = z.infer<typeof UpdateOrgProviderRequest>;
 export const RotateOrgProviderKeyRequest = z.object({
   apiKey: z.string().min(8, 'API key must be at least 8 characters'),
 });
+export type RotateOrgProviderKeyRequest = z.infer<typeof RotateOrgProviderKeyRequest>;
+
+// --- templates ---
+// Tag pattern: lowercase letter start, then lowercase letters/digits/hyphen, max 24 chars.
+// Lowercase-only — no `/i` flag; UI lowercases on submit.
+export const TemplateTag = z.string().regex(
+  /^[a-z][a-z0-9-]{0,23}$/,
+  'Tags use lowercase letters, digits, and hyphens; start with a letter (max 24).',
+);
+export type TemplateTag = z.infer<typeof TemplateTag>;
+
+export const OrgTemplateRow = z.object({
+  id: z.string(),
+  name: z.string().min(2).max(80),
+  description: z.string().max(280).optional(),
+  body: z.string().min(1).max(8000),
+  tags: z.array(TemplateTag).max(6),
+  updatedAt: z.string().datetime(),
+});
+export type OrgTemplateRow = z.infer<typeof OrgTemplateRow>;
+
+export const OrgTemplateListResponse = z.object({
+  templates: z.array(OrgTemplateRow),
+});
+export type OrgTemplateListResponse = z.infer<typeof OrgTemplateListResponse>;
+
+export const OrgTemplateCreateRequest = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters').max(80),
+  description: z.string().max(280).optional(),
+  body: z.string().min(1, 'Body is required').max(8000),
+  tags: z.array(TemplateTag).max(6, 'At most 6 tags'),
+});
+export type OrgTemplateCreateRequest = z.infer<typeof OrgTemplateCreateRequest>;
+
+export const OrgTemplateUpdateRequest = OrgTemplateCreateRequest.partial();
+export type OrgTemplateUpdateRequest = z.infer<typeof OrgTemplateUpdateRequest>;
