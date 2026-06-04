@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ProviderKind } from './resources';
+import { WorkspaceRole } from './auth';
 
 export const AdminScope = z.enum(['org', 'workspace']);
 export type AdminScope = z.infer<typeof AdminScope>;
@@ -99,3 +100,53 @@ export type OrgTemplateCreateRequest = z.infer<typeof OrgTemplateCreateRequest>;
 
 export const OrgTemplateUpdateRequest = OrgTemplateCreateRequest.partial();
 export type OrgTemplateUpdateRequest = z.infer<typeof OrgTemplateUpdateRequest>;
+
+// --- workspace providers ---
+export const WsProviderItem = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  providerKind: ProviderKind,
+});
+export type WsProviderItem = z.infer<typeof WsProviderItem>;
+
+export const WsProvidersResponse = z.object({
+  available: z.array(WsProviderItem),
+  bound: z.array(WsProviderItem),
+});
+export type WsProvidersResponse = z.infer<typeof WsProvidersResponse>;
+
+export const PutWsProvidersRequest = z.object({
+  providerIds: z.array(z.string().min(1)).max(100),
+});
+export type PutWsProvidersRequest = z.infer<typeof PutWsProvidersRequest>;
+
+// --- workspace templates ---
+export const WsAvailableTemplate = z.object({
+  templateId: z.string(),
+  name: z.string(),
+});
+export type WsAvailableTemplate = z.infer<typeof WsAvailableTemplate>;
+
+export const WsBoundTemplate = z.object({
+  templateId: z.string(),
+  name: z.string(),
+  suggestedRole: WorkspaceRole,
+});
+export type WsBoundTemplate = z.infer<typeof WsBoundTemplate>;
+
+export const WsTemplatesResponse = z.object({
+  available: z.array(WsAvailableTemplate),
+  bound: z.array(WsBoundTemplate),
+});
+export type WsTemplatesResponse = z.infer<typeof WsTemplatesResponse>;
+
+export const PutWsTemplatePair = z.object({
+  templateId: z.string().min(1),
+  suggestedRole: WorkspaceRole,
+});
+export type PutWsTemplatePair = z.infer<typeof PutWsTemplatePair>;
+
+export const PutWsTemplatesRequest = z.object({
+  templates: z.array(PutWsTemplatePair).max(100),
+});
+export type PutWsTemplatesRequest = z.infer<typeof PutWsTemplatesRequest>;
