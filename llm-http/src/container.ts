@@ -12,6 +12,19 @@ import { seedUsers } from "./auth/seed-users.js";
 import { CredentialsVerifier } from "./auth/credentials-verifier.js";
 import { JwtService } from "./auth/jwt-service.js";
 import { StdoutAuditEmitter } from "./admin/audit-emitter-stdout.js";
+import {
+  InMemoryOrgUsersRepository,
+  type OrgUserRow,
+} from "./admin/org/users-repo.js";
+import {
+  DefaultOrgUsersService,
+  type OrgUsersService,
+} from "./admin/org/users-service.js";
+import { InMemoryOrgTemplateRepo } from "./admin/org/templates-repo.js";
+import { OrgTemplateService } from "./admin/org/templates-service.js";
+import { ApiKeyVault } from "./admin/org/api-key-vault.js";
+import { InMemoryProvidersRepository } from "./admin/org/providers-repo.js";
+import { OrgProvidersService } from "./admin/org/providers-service.js";
 import { StreamChatUseCase } from "./chat/stream-chat-use-case.js";
 import { OneShotChatUseCase } from "./chat/one-shot-chat-use-case.js";
 import { ChatCommandHandler } from "./chat/handlers/chat-command-handler.js";
@@ -26,6 +39,10 @@ export interface AppContainer {
   credentialsVerifier: CredentialsVerifier;
   jwtService: JwtService;
   auditEmitter: AuditEmitter;
+  orgUsersService: OrgUsersService;
+  orgTemplateService: OrgTemplateService;
+  orgProvidersService: OrgProvidersService;
+  apiKeyVault: ApiKeyVault;
   streamChatUseCase: StreamChatUseCase;
   oneShotChatUseCase: OneShotChatUseCase;
   wsCommandHandlers: WsCommandHandlerMap;
@@ -53,6 +70,25 @@ export function buildContainer(config: Config, logger: Logger): AppContainer {
   const credentialsVerifier = new CredentialsVerifier(userRepository);
   const jwtService = new JwtService(config.JWT_SECRET, config.JWT_EXPIRES_IN);
   const auditEmitter = new StdoutAuditEmitter(logger);
+  const orgUsersRepo = new InMemoryOrgUsersRepository(seedOrgUsers());
+  const orgUsersService = new DefaultOrgUsersService(
+    orgUsersRepo,
+    auditEmitter,
+    logger,
+  );
+  const orgTemplateRepo = new InMemoryOrgTemplateRepo();
+  const orgTemplateService = new OrgTemplateService(orgTemplateRepo, auditEmitter);
+  const apiKeyVault = new ApiKeyVault({
+    PROVIDER_KEY_VAULT_KEY: config.PROVIDER_KEY_VAULT_KEY,
+    NODE_ENV: config.NODE_ENV,
+  });
+  const orgProvidersRepo = new InMemoryProvidersRepository();
+  const orgProvidersService = new OrgProvidersService(
+    orgProvidersRepo,
+    apiKeyVault,
+    auditEmitter,
+    logger,
+  );
 
   const streamChatUseCase = new StreamChatUseCase(chatGateway);
   const oneShotChatUseCase = new OneShotChatUseCase(chatGateway);
@@ -71,8 +107,34 @@ export function buildContainer(config: Config, logger: Logger): AppContainer {
     credentialsVerifier,
     jwtService,
     auditEmitter,
+    orgUsersService,
+    orgTemplateService,
+    orgProvidersService,
+    apiKeyVault,
     streamChatUseCase,
     oneShotChatUseCase,
     wsCommandHandlers,
   };
+}
+
+function seedOrgUsers(): Map<string, OrgUserRow[]> {
+  return new Map([
+    [
+      "demo-org",
+      [
+        {
+          id: "seed-user-active",
+          email: "ada@demo.example",
+          status: "active",
+          joinedAt: "2026-01-15T09:00:00.000Z",
+        },
+        {
+          id: "seed-user-pending",
+          email: "grace@demo.example",
+          status: "pending",
+          joinedAt: "2026-02-08T14:30:00.000Z",
+        },
+      ],
+    ],
+  ]);
 }

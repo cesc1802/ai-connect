@@ -3,7 +3,14 @@ import type { AppContainer } from "./container.js";
 import { createHealthRoutes } from "./health/health-routes.js";
 import { createAuthRoutes } from "./auth/auth-routes.js";
 import { createChatRestRoutes } from "./chat/chat-rest-routes.js";
-import { createRequireAuth } from "./auth/auth-middleware.js";
+import {
+  createRequireAuth,
+  createRequireOrgAdmin,
+} from "./auth/auth-middleware.js";
+import { createOrgUsersRoutes } from "./admin/org/users-routes.js";
+import { createOrgTemplatesRouter } from "./admin/org/templates-routes.js";
+import { createOrgProvidersRoutes } from "./admin/org/providers-routes.js";
+import { createRedactLogMiddleware } from "./admin/redact-log-middleware.js";
 import { createRateLimit } from "./shared/rate-limit.js";
 import { createErrorHandler } from "./shared/error-handler.js";
 
@@ -17,6 +24,7 @@ export function createApp(container: AppContainer): Express {
   }
 
   app.use(express.json({ limit: "1mb" }));
+  app.use(createRedactLogMiddleware());
 
   const loginLimit = createRateLimit({
     windowMs: config.RATE_LIMIT_LOGIN_WINDOW_MS,
@@ -40,6 +48,24 @@ export function createApp(container: AppContainer): Express {
   app.use("/auth/login", loginLimit);
   app.use("/auth", createAuthRoutes(container));
   app.use("/chat", requireAuth, chatLimit, createChatRestRoutes(container));
+  app.use(
+    "/admin/org/users",
+    requireAuth,
+    createRequireOrgAdmin(),
+    createOrgUsersRoutes(container),
+  );
+  app.use(
+    "/admin/org/templates",
+    requireAuth,
+    createRequireOrgAdmin(),
+    createOrgTemplatesRouter(container.orgTemplateService),
+  );
+  app.use(
+    "/admin/org/providers",
+    requireAuth,
+    createRequireOrgAdmin(),
+    createOrgProvidersRoutes(container.orgProvidersService),
+  );
 
   app.use(createErrorHandler(container.logger, isProd));
 
