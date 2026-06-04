@@ -13,6 +13,12 @@ const UsersTab = React.lazy(() =>
   })),
 );
 
+const ProvidersTab = React.lazy(() =>
+  import('@/components/admin/org/providers-tab').then((m) => ({
+    default: m.ProvidersTab,
+  })),
+);
+
 function OrgAdminPlaceholder({ label }: { label: string }) {
   return (
     <EmptyState
@@ -46,7 +52,11 @@ function OrgAdminShell() {
           {
             value: 'providers',
             label: 'Providers',
-            content: <OrgAdminPlaceholder label="Providers" />,
+            content: (
+              <React.Suspense fallback={<DataTableSkeleton columnCount={4} />}>
+                <ProvidersTab />
+              </React.Suspense>
+            ),
           },
           {
             value: 'templates',

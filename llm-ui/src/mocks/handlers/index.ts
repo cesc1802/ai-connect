@@ -4,6 +4,7 @@ import { conversationHandlers } from './conversation-handlers';
 import { resourcesHandlers } from './resources-handlers';
 import { wsHandlers } from './ws-chat-v2-handler';
 import { adminUsersHandlers } from './admin-users';
+import { adminOrgProvidersHandlers } from './admin-org-providers-handlers';
 
 export const handlers = [
   ...authHandlers,
@@ -12,4 +13,5 @@ export const handlers = [
   ...resourcesHandlers,
   ...wsHandlers,
   ...adminUsersHandlers,
+  ...adminOrgProvidersHandlers,
 ];
