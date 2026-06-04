@@ -4,6 +4,10 @@ export const DEMO_USER: SessionUser = {
   id: 'usr_demo_001',
   email: 'demo@ai-connect.local',
   displayName: 'Demo User',
+  orgId: 'org-demo',
+  orgRole: 'admin',
+  workspaceId: 'ws-demo',
+  workspaceRole: 'admin',
 };
 
 export const DEMO_PASSWORD = 'demopass123';

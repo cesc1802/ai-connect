@@ -46,7 +46,12 @@ describe('router redirect guard', () => {
 
   it('allows /chat when session is present', async () => {
     const router = buildRouter('/chat', {
-      session: { userId: 'u-1', workspaceId: 'w-1' },
+      session: {
+        userId: 'u-1',
+        workspaceId: 'w-1',
+        orgRole: 'member',
+        workspaceRole: 'member',
+      },
     });
     renderWithProviders(router);
 

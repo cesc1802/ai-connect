@@ -12,9 +12,11 @@ export function useRouterSession(): SessionState | null {
   const user = useAuthStore((s) => s.user);
   const workspaceId = useActiveWorkspaceStore((s) => s.activeWorkspaceId);
 
-  if (!accessToken) return null;
+  if (!accessToken || !user) return null;
   return {
-    userId: user?.id ?? '',
+    userId: user.id,
     workspaceId,
+    orgRole: user.orgRole,
+    workspaceRole: user.workspaceRole,
   };
 }
