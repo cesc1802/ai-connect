@@ -16,6 +16,7 @@ import { membersRoute } from './routes/members-route';
 import { accessMatrixRoute } from './routes/access-matrix-route';
 import { workspacesListRoute } from './routes/workspaces-list-route';
 import { workspaceDetailRoute } from './routes/workspace-detail-route';
+import { providersRoute } from './routes/providers-route';
 
 export const routeTree = rootRoute.addChildren([
   unauthenticatedRoute.addChildren([
@@ -29,6 +30,7 @@ export const routeTree = rootRoute.addChildren([
     chatConversationRoute,
     workspacesListRoute,
     workspaceDetailRoute,
+    providersRoute,
     adminRoute.addChildren([
       orgAdminRoute,
       workspaceAdminRoute,
