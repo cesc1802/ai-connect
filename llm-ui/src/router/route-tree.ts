@@ -11,6 +11,11 @@ import { adminRoute } from './routes/admin-route';
 import { orgAdminRoute } from './routes/org-admin-route';
 import { workspaceAdminRoute } from './routes/workspace-admin-route';
 import { adminForbiddenRoute } from './routes/admin-forbidden-route';
+import { overviewRoute } from './routes/overview-route';
+import { membersRoute } from './routes/members-route';
+import { accessMatrixRoute } from './routes/access-matrix-route';
+import { workspacesListRoute } from './routes/workspaces-list-route';
+import { workspaceDetailRoute } from './routes/workspace-detail-route';
 
 export const routeTree = rootRoute.addChildren([
   unauthenticatedRoute.addChildren([
@@ -22,7 +27,16 @@ export const routeTree = rootRoute.addChildren([
   authenticatedRoute.addChildren([
     chatIndexRoute,
     chatConversationRoute,
-    adminRoute.addChildren([orgAdminRoute, workspaceAdminRoute, adminForbiddenRoute]),
+    workspacesListRoute,
+    workspaceDetailRoute,
+    adminRoute.addChildren([
+      orgAdminRoute,
+      workspaceAdminRoute,
+      adminForbiddenRoute,
+      overviewRoute,
+      membersRoute,
+      accessMatrixRoute,
+    ]),
   ]),
   devPrimitivesRoute,
 ]);

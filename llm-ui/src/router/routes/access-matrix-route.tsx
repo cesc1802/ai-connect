@@ -2,7 +2,7 @@ import * as React from 'react';
 import { createRoute, redirect } from '@tanstack/react-router';
 import { z } from 'zod';
 
-import { orgAdminRoute } from './org-admin-route';
+import { adminRoute } from './admin-route';
 
 const AccessMatrixPage = React.lazy(() =>
   import('@/pages/access-matrix-page').then((m) => ({
@@ -16,8 +16,8 @@ const matrixSearchSchema = z.object({
 });
 
 export const accessMatrixRoute = createRoute({
-  getParentRoute: () => orgAdminRoute,
-  path: 'matrix',
+  getParentRoute: () => adminRoute,
+  path: 'org/matrix',
   validateSearch: matrixSearchSchema,
   beforeLoad: ({ context }) => {
     if (context.session?.orgRole !== 'admin') {
