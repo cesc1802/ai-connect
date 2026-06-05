@@ -17,6 +17,8 @@ import { accessMatrixRoute } from './routes/access-matrix-route';
 import { workspacesListRoute } from './routes/workspaces-list-route';
 import { workspaceDetailRoute } from './routes/workspace-detail-route';
 import { providersRoute } from './routes/providers-route';
+import { assignmentRoute } from './routes/assignment-route';
+import { templatesRoute } from './routes/templates-route';
 
 export const routeTree = rootRoute.addChildren([
   unauthenticatedRoute.addChildren([
@@ -38,6 +40,8 @@ export const routeTree = rootRoute.addChildren([
       overviewRoute,
       membersRoute,
       accessMatrixRoute,
+      assignmentRoute,
+      templatesRoute,
     ]),
   ]),
   devPrimitivesRoute,
