@@ -6,6 +6,7 @@ import { ConnectionStatusBadge } from '@/components/chat/connection-status-badge
 import { EmptyState } from '@/components/chat/empty-state';
 import { MessageThread } from '@/components/chat/message-thread';
 import { ModelSelector } from '@/components/chat/model-selector';
+import { TemplatePickerRail } from '@/components/chat/template-picker-rail';
 import { useChatSession } from '@/hooks/use-chat-session';
 import { useActiveWorkspaceStore } from '@/stores/active-workspace-store';
 import { useStreamingStore } from '@/stores/streaming-store';
@@ -54,28 +55,32 @@ export function ChatPage() {
   const hasContent = conversationId != null;
 
   return (
-    <div className="grid h-full grid-rows-[auto_1fr_auto]">
-      <div className="border-border bg-background flex items-center justify-between gap-2 border-b px-4 py-2">
-        <div className="min-w-0 truncate text-sm font-medium">
-          {conversationId ? 'Conversation' : 'New conversation'}
+    <div className="grid h-full grid-cols-[280px_1fr]">
+      <TemplatePickerRail />
+      <div className="grid min-h-0 grid-rows-[auto_1fr_auto]">
+        <div className="border-border bg-background flex items-center justify-between gap-2 border-b px-4 py-2">
+          <div className="min-w-0 truncate text-sm font-medium">
+            {conversationId ? 'Conversation' : 'New conversation'}
+          </div>
+          <div className="flex min-w-0 items-center gap-2">
+            <ModelSelector className="min-w-0" />
+            <ConnectionStatusBadge status={status} />
+          </div>
         </div>
-        <div className="flex min-w-0 items-center gap-2">
-          <ModelSelector className="min-w-0" />
-          <ConnectionStatusBadge status={status} />
+        <div className="min-h-0">
+          {hasContent ? (
+            <MessageThread conversationId={conversationId} cacheKey={cacheKey} />
+          ) : (
+            <PendingOrEmpty cacheKey={cacheKey} />
+          )}
         </div>
+        <Composer
+          ref={composerRef}
+          disabled={composerDisabled}
+          placeholder="Nhập tin nhắn…"
+          onSubmit={onSubmit}
+        />
       </div>
-      <div className="min-h-0">
-        {hasContent ? (
-          <MessageThread conversationId={conversationId} cacheKey={cacheKey} />
-        ) : (
-          <PendingOrEmpty cacheKey={cacheKey} />
-        )}
-      </div>
-      <Composer
-        ref={composerRef}
-        disabled={composerDisabled}
-        onSubmit={onSubmit}
-      />
     </div>
   );
 }
