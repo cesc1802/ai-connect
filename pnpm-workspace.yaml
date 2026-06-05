@@ -3,5 +3,6 @@ packages:
   - llm-http
   - llm-shared
   - llm-db
+  - llm-ui
 
 onlyBuiltDependencies: esbuild
