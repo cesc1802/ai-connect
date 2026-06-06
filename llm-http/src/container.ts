@@ -47,6 +47,17 @@ import { OneShotChatUseCase } from "./chat/one-shot-chat-use-case.js";
 import { ChatCommandHandler } from "./chat/handlers/chat-command-handler.js";
 import { PingCommandHandler } from "./chat/handlers/ping-command-handler.js";
 import type { WsCommandHandlerMap } from "./chat/chat-ws-handler.js";
+import type { ChatEvent } from "@ai-connect/shared";
+import { EventBus } from "./events/event-bus.js";
+import { LocalConnectionRegistry } from "./transport/local-connection-registry.js";
+import type { ConnectionRegistry } from "./transport/connection-registry.js";
+import { InMemoryConversationRepository } from "./repositories/in-memory-conversation-repo.js";
+import { InMemoryMessageRepository } from "./repositories/in-memory-message-repo.js";
+import type {
+  ConversationRepository,
+  MessageRepository,
+} from "@ai-connect/shared";
+import { ChatHandler } from "./chat-v2/chat-handler.js";
 
 export interface AppContainer {
   config: Config;
@@ -67,6 +78,11 @@ export interface AppContainer {
   streamChatUseCase: StreamChatUseCase;
   oneShotChatUseCase: OneShotChatUseCase;
   wsCommandHandlers: WsCommandHandlerMap;
+  bus: EventBus<ChatEvent>;
+  registry: ConnectionRegistry;
+  convRepo: ConversationRepository;
+  msgRepo: MessageRepository;
+  chatHandler: ChatHandler;
 }
 
 export function buildContainer(config: Config, logger: Logger): AppContainer {
@@ -147,6 +163,13 @@ export function buildContainer(config: Config, logger: Logger): AppContainer {
     ping: pingCommandHandler,
   };
 
+  const bus = new EventBus<ChatEvent>({ logger });
+  const registry = new LocalConnectionRegistry();
+  const convRepo = new InMemoryConversationRepository();
+  const msgRepo = new InMemoryMessageRepository(convRepo);
+  const chatHandler = new ChatHandler(bus, chatGateway, logger);
+  chatHandler.start();
+
   return {
     config,
     logger,
@@ -166,6 +189,11 @@ export function buildContainer(config: Config, logger: Logger): AppContainer {
     streamChatUseCase,
     oneShotChatUseCase,
     wsCommandHandlers,
+    bus,
+    registry,
+    convRepo,
+    msgRepo,
+    chatHandler,
   };
 }
 
