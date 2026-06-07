@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icons";
 import { useChatStore } from "@/lib/chat-context";
 import type { ChatV2ClientState } from "@/lib/ws-client";
+import { TemplatePicker } from "./template-picker";
 
 export interface ComposerProps {
   model: string;
@@ -43,10 +44,7 @@ export const Composer = memo(function Composer({
 
   return (
     <div className="border-t bg-background p-4">
-      <div className="flex items-end gap-2 rounded-xl border bg-card p-2">
-        <Button variant="ghost" size="icon-sm" disabled>
-          <Icon name="paperclip" className="h-4 w-4" />
-        </Button>
+      <div className="flex flex-col gap-2 rounded-xl border bg-card p-2 shadow-sm">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -57,12 +55,19 @@ export const Composer = memo(function Composer({
             }
           }}
           placeholder="Hỏi Growing bất cứ điều gì..."
-          rows={1}
-          className="flex-1 resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground"
+          rows={2}
+          className="resize-none bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground"
         />
-        <Button onClick={submit} disabled={disabled}>
-          <Icon name="send" className="h-4 w-4" /> Gửi
-        </Button>
+        <div className="flex items-center gap-2">
+          <TemplatePicker onPick={setInput} />
+          <Button variant="ghost" size="icon-sm" disabled title="Đính kèm (sắp ra mắt)">
+            <Icon name="paperclip" className="h-4 w-4" />
+          </Button>
+          <div className="flex-1" />
+          <Button size="sm" onClick={submit} disabled={disabled}>
+            <Icon name="send" className="h-4 w-4" /> Gửi
+          </Button>
+        </div>
       </div>
       <p className="mt-1 text-center text-2xs text-muted-foreground">
         {!socketOpen

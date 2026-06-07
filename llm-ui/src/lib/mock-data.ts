@@ -132,6 +132,30 @@ export const TEMPLATES: Template[] = [
   { id: "t12", title: "Email onboarding", cat: "Marketing", icon: "mail", uses: 351, author: "Nga", desc: "Chuỗi email chào mừng người dùng mới theo từng giai đoạn." },
 ];
 
+// Past chat sessions surfaced in the left-side history rail. Grouped by
+// the human-readable `group` bucket so the UI does not re-compute dates.
+export type Conversation = {
+  id: string;
+  title: string;
+  preview: string;
+  updatedLabel: string;
+  group: "Hôm nay" | "Hôm qua" | "7 ngày qua" | "Cũ hơn";
+  msgCount: number;
+  model: string;
+  templateId?: string;
+};
+
+export const CONVERSATIONS: Conversation[] = [
+  { id: "c1", title: "Review PR #482 — refactor auth", preview: "Diff có 12 file. Tập trung vào session token storage…", updatedLabel: "10:42", group: "Hôm nay", msgCount: 14, model: "claude-sonnet-4", templateId: "t1" },
+  { id: "c2", title: "User story: cổng thanh toán", preview: "Là khách hàng, tôi muốn lưu thẻ để…", updatedLabel: "09:15", group: "Hôm nay", msgCount: 6, model: "gpt-5", templateId: "t2" },
+  { id: "c3", title: "Test case xuất hoá đơn", preview: "Happy path: hoá đơn VND với VAT 8%…", updatedLabel: "Hôm qua, 17:02", group: "Hôm qua", msgCount: 22, model: "claude-sonnet-4", templateId: "t3" },
+  { id: "c4", title: "Tóm tắt standup nhóm Banking", preview: "3 chặn, 2 hoàn thành, sprint 24…", updatedLabel: "Hôm qua, 09:30", group: "Hôm qua", msgCount: 4, model: "gpt-4o", templateId: "t4" },
+  { id: "c5", title: "Phản hồi khiếu nại giao hàng trễ", preview: "Soạn email xin lỗi, đề xuất voucher 10%…", updatedLabel: "T4", group: "7 ngày qua", msgCount: 8, model: "claude-opus-4", templateId: "t6" },
+  { id: "c6", title: "Giải thích query JOIN 3 bảng", preview: "Truy vấn này lấy đơn + khách + sản phẩm…", updatedLabel: "T2", group: "7 ngày qua", msgCount: 11, model: "ollama/gemma3:4b", templateId: "t7" },
+  { id: "c7", title: "Ma trận RACI dự án ECOM", preview: "Stakeholder: PM, BA, QA, Dev, Ops…", updatedLabel: "25/05", group: "Cũ hơn", msgCount: 17, model: "gpt-5", templateId: "t9" },
+  { id: "c8", title: "Phân tích đối thủ Shopee vs Lazada", preview: "Khung 5 trục: giá, vận hành, marketing…", updatedLabel: "22/05", group: "Cũ hơn", msgCount: 9, model: "claude-sonnet-4", templateId: "t11" },
+];
+
 export function userById(uid: string): User | undefined {
   return USERS.find((u) => u.id === uid);
 }

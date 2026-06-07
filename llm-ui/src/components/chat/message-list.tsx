@@ -15,7 +15,7 @@ export function MessageList() {
     return (
       <div className="flex flex-1 items-center justify-center p-6">
         <p className="max-w-sm text-center text-sm text-muted-foreground">
-          Bắt đầu cuộc trò chuyện. Chọn một template ở bên trái hoặc nhập bên dưới.
+          Bắt đầu cuộc trò chuyện. Bấm nút <span className="font-medium">Template</span> trong khung soạn để chọn mẫu prompt, hoặc nhập trực tiếp bên dưới.
         </p>
       </div>
     );
