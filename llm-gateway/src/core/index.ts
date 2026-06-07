@@ -49,6 +49,7 @@ export type {
 
 export {
   DEFAULT_TIMEOUT_MS,
+  DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   DEFAULT_CIRCUIT_BREAKER,
   DEFAULT_RETRY,
   loadConfigFromEnv,

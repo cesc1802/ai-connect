@@ -11,10 +11,12 @@ import {
   mergeWithEnvConfig,
   validateConfig,
   DEFAULT_TIMEOUT_MS,
+  DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   DEFAULT_CIRCUIT_BREAKER,
   DEFAULT_RETRY,
   PROVIDER_NAMES,
   TimeoutError,
+  AbortError,
   LLMError,
 } from "./core/index.js";
 import type { LLMProvider } from "./providers/index.js";
@@ -78,6 +80,7 @@ export class LLMGateway {
   private readonly circuitBreakers = new Map<ProviderName, CircuitBreaker>();
   private readonly retryConfig: RetryConfig;
   private readonly timeoutMs: number;
+  private readonly streamIdleTimeoutMs: number;
 
   // Telemetry
   private readonly tracer: LLMTracer;
@@ -100,6 +103,7 @@ export class LLMGateway {
     // Store configs
     this.retryConfig = { ...DEFAULT_RETRY, ...config.retry };
     this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.streamIdleTimeoutMs = config.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS;
 
     // Initialize telemetry
     this.tracer = new LLMTracer(config.telemetry);
@@ -179,7 +183,12 @@ export class LLMGateway {
         provider.name,
         error instanceof LLMError ? error.code : "UNKNOWN"
       );
-      this.updateCircuitHealth(provider.name, false);
+      // Only blame the provider for provider-side faults.
+      // Gateway-imposed timeouts and client aborts are not provider failures
+      // and must not trip the circuit breaker.
+      if (this.isProviderFault(error, options?.signal)) {
+        this.updateCircuitHealth(provider.name, false);
+      }
       throw error;
     } finally {
       span.end();
@@ -199,7 +208,10 @@ export class LLMGateway {
     const provider = this.resolveProvider(request, options);
     // Normalize model name by stripping provider prefix (e.g., "minimax/MiniMax-M2.7" -> "MiniMax-M2.7")
     const normalizedRequest = this.normalizeRequest(request);
-    const { signal, cleanup } = this.createTimeoutSignal(options);
+    // Streaming uses an idle timeout (reset on each chunk) instead of a
+    // wall-clock deadline, so long answers complete as long as the provider
+    // keeps emitting chunks. A truly stalled stream still aborts.
+    const { signal, cleanup, reset } = this.createIdleTimeoutSignal(options);
 
     // Start telemetry span
     this.metrics.recordRequest(provider.name, normalizedRequest.model, true);
@@ -212,6 +224,7 @@ export class LLMGateway {
       const retryProvider = new RetryDecorator(provider, this.retryConfig);
 
       for await (const chunk of retryProvider.streamCompletion(normalizedRequest, signal)) {
+        reset();
         yield chunk;
       }
 
@@ -226,7 +239,9 @@ export class LLMGateway {
         provider.name,
         error instanceof LLMError ? error.code : "UNKNOWN"
       );
-      this.updateCircuitHealth(provider.name, false);
+      if (this.isProviderFault(error, options?.signal)) {
+        this.updateCircuitHealth(provider.name, false);
+      }
       throw error;
     } finally {
       span.end();
@@ -365,6 +380,75 @@ export class LLMGateway {
       signal: controller.signal,
       cleanup: () => clearTimeout(timeoutId),
     };
+  }
+
+  /**
+   * Create an idle-reset timeout signal for streaming.
+   * The timer fires only after `timeout` ms of inactivity (no chunks).
+   * Caller invokes `reset()` after each chunk to defer the deadline.
+   */
+  private createIdleTimeoutSignal(options?: GatewayRequestOptions): {
+    signal: AbortSignal;
+    cleanup: () => void;
+    reset: () => void;
+  } {
+    // Streaming uses streamIdleTimeoutMs (default 5 min). The 60s `timeoutMs`
+    // is tuned for non-streaming chat() and is too tight for time-to-first-
+    // token on large prompts.
+    const timeout = options?.timeout ?? this.streamIdleTimeoutMs;
+    const controller = new AbortController();
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      controller.abort(new TimeoutError("gateway", timeout));
+    }, timeout);
+
+    const reset = (): void => {
+      if (timeoutId !== null) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        controller.abort(new TimeoutError("gateway", timeout));
+      }, timeout);
+    };
+
+    const userSignal = options?.signal;
+    let abortHandler: (() => void) | null = null;
+    if (userSignal) {
+      abortHandler = () => controller.abort(userSignal.reason);
+      if (userSignal.aborted) {
+        abortHandler();
+      } else {
+        userSignal.addEventListener("abort", abortHandler);
+      }
+    }
+
+    return {
+      signal: controller.signal,
+      reset,
+      cleanup: () => {
+        if (timeoutId !== null) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        if (userSignal && abortHandler) {
+          userSignal.removeEventListener("abort", abortHandler);
+        }
+      },
+    };
+  }
+
+  /**
+   * True when an error reflects a real provider-side fault.
+   * Gateway-imposed timeouts and client/user aborts are NOT provider faults
+   * and must not contribute to circuit-breaker failure counts.
+   * If the caller's signal is aborted, treat the failure as a client cancel
+   * regardless of the surfaced error shape (providers normalize aborts
+   * inconsistently — some throw plain Error, others throw DOMException).
+   */
+  private isProviderFault(error: unknown, userSignal?: AbortSignal): boolean {
+    if (userSignal?.aborted) return false;
+    if (error instanceof TimeoutError) return false;
+    if (error instanceof AbortError) return false;
+    if (error instanceof Error && error.name === "AbortError") return false;
+    return true;
   }
 
   /**

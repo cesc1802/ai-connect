@@ -62,6 +62,10 @@ export interface GatewayConfig {
   providers: ProviderConfig;
   defaultProvider?: ProviderName;
   timeoutMs?: number;
+  // Per-chunk idle deadline for streaming. Resets each chunk; fires only if
+  // no chunk arrives for this many ms. Covers slow time-to-first-token and
+  // mid-stream stalls without killing legitimately long answers.
+  streamIdleTimeoutMs?: number;
   circuitBreaker?: CircuitBreakerConfig;
   retry?: RetryConfig;
   telemetry?: TelemetryConfig;
@@ -77,6 +81,9 @@ export interface TelemetryConfig {
  * Default configurations
  */
 export const DEFAULT_TIMEOUT_MS = 60_000;
+// Streaming idle gap. 5 minutes accommodates large-context cold starts and
+// slow time-to-first-token without masking truly hung streams.
+export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000;
 
 export const DEFAULT_CIRCUIT_BREAKER: CircuitBreakerConfig = {
   failureThreshold: 5,

@@ -279,6 +279,97 @@ describe("LLMGateway", () => {
 
       expect(gateway.getMetrics().totalErrors).toBe(1);
     });
+
+    // Regression: long streaming answers used to trip a wall-clock timeout,
+    // which marked the provider unhealthy. With idle-reset timing, a stream
+    // that keeps emitting chunks must complete past the timeout window AND
+    // keep the provider healthy.
+    it("idle-reset timeout: long stream emitting chunks does NOT trip circuit", async () => {
+      async function* slowButActiveStream(): AsyncIterable<StreamChunk> {
+        for (let i = 0; i < 6; i++) {
+          await new Promise((r) => setTimeout(r, 30));
+          yield { id: String(i), delta: { type: "text", text: "tok" } };
+        }
+        yield { id: "end", delta: { type: "text", text: "." }, finishReason: "stop" };
+      }
+      (mockProvider.streamCompletion as ReturnType<typeof vi.fn>).mockReturnValue(
+        slowButActiveStream()
+      );
+
+      const gateway = new LLMGateway({
+        providers: { anthropic: { apiKey: "test-key" } },
+        // Total elapsed (~210ms) > timeout (100ms), but no idle gap > 100ms.
+        timeoutMs: 100,
+        retry: { maxRetries: 0, initialDelayMs: 0, maxDelayMs: 0, backoffMultiplier: 1, retryableErrors: [] },
+      });
+
+      const chunks: StreamChunk[] = [];
+      for await (const c of gateway.stream(createTestRequest())) chunks.push(c);
+
+      expect(chunks.length).toBeGreaterThan(0);
+      expect(gateway.isProviderHealthy("anthropic")).toBe(true);
+      expect(gateway.getMetrics().totalErrors).toBe(0);
+    });
+
+    // Regression: streaming idle timeout must be longer than chat() timeout.
+    // Long prompts can take 60s+ to produce the first token. A 60s chat()
+    // timeout must not apply to streaming time-to-first-token.
+    it("stream uses streamIdleTimeoutMs, not the chat timeoutMs", async () => {
+      async function* slowFirstChunk(): AsyncIterable<StreamChunk> {
+        // Idle gap longer than chat timeout (50ms) but shorter than stream
+        // idle timeout (200ms) — must complete without timing out.
+        await new Promise((r) => setTimeout(r, 120));
+        yield { id: "1", delta: { type: "text", text: "hi" }, finishReason: "stop" };
+      }
+      (mockProvider.streamCompletion as ReturnType<typeof vi.fn>).mockReturnValue(
+        slowFirstChunk()
+      );
+
+      const gateway = new LLMGateway({
+        providers: { anthropic: { apiKey: "test-key" } },
+        timeoutMs: 50,
+        streamIdleTimeoutMs: 200,
+        retry: { maxRetries: 0, initialDelayMs: 0, maxDelayMs: 0, backoffMultiplier: 1, retryableErrors: [] },
+      });
+
+      const chunks: StreamChunk[] = [];
+      for await (const c of gateway.stream(createTestRequest())) chunks.push(c);
+
+      expect(chunks).toHaveLength(1);
+      expect(gateway.isProviderHealthy("anthropic")).toBe(true);
+    });
+
+    // Regression: client-aborted streams must NOT count as provider failures.
+    it("client abort does NOT contribute to circuit failures", async () => {
+      const controller = new AbortController();
+      async function* abortableStream(signal?: AbortSignal): AsyncIterable<StreamChunk> {
+        yield { id: "1", delta: { type: "text", text: "Hi" } };
+        await new Promise<void>((_, reject) => {
+          if (signal?.aborted) return reject(new Error("aborted"));
+          signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        });
+      }
+      (mockProvider.streamCompletion as ReturnType<typeof vi.fn>).mockImplementation(
+        (_req: ChatRequest, signal?: AbortSignal) => abortableStream(signal)
+      );
+
+      const gateway = new LLMGateway({
+        providers: { anthropic: { apiKey: "test-key" } },
+        circuitBreaker: { failureThreshold: 1, resetTimeoutMs: 60_000, halfOpenRequests: 1 },
+        retry: { maxRetries: 0, initialDelayMs: 0, maxDelayMs: 0, backoffMultiplier: 1, retryableErrors: [] },
+      });
+
+      const consume = async (): Promise<void> => {
+        for await (const _c of gateway.stream(createTestRequest(), { signal: controller.signal })) {
+          // first chunk arrives, then we trigger abort below
+          controller.abort();
+        }
+      };
+
+      await expect(consume()).rejects.toBeDefined();
+      // Even with failureThreshold=1, an abort must not trip the circuit.
+      expect(gateway.isProviderHealthy("anthropic")).toBe(true);
+    });
   });
 
   describe("getProvider", () => {
