@@ -9,6 +9,7 @@ import { MatrixScreen } from "@/screens/matrix-screen";
 import { ProvidersScreen } from "@/screens/providers-screen";
 import { TemplatesScreen } from "@/screens/templates-screen";
 import { ChatScreen } from "@/screens/chat-screen";
+import { ChatStoreProvider } from "@/lib/chat-context";
 import { PlaceholderScreen } from "@/screens/placeholder-screen";
 
 export function App() {
@@ -16,7 +17,14 @@ export function App() {
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<OverviewScreen />} />
-        <Route path="chat" element={<ChatScreen />} />
+        <Route
+          path="chat"
+          element={
+            <ChatStoreProvider>
+              <ChatScreen />
+            </ChatStoreProvider>
+          }
+        />
         <Route path="members" element={<MembersScreen />} />
         <Route path="workspaces" element={<WorkspacesListScreen />} />
         <Route path="workspaces/:id" element={<WorkspaceDetailScreen />} />

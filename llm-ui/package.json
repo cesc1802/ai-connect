@@ -7,21 +7,30 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "tsc -b --noEmit"
+    "lint": "tsc -b --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   },
   "dependencies": {
     "lucide-react": "^0.469.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.1.1"
+    "react-router-dom": "^7.1.1",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/ui": "^2.1.9",
+    "jsdom": "^29.1.1",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.2",
-    "vite": "^6.0.5"
+    "vite": "^6.0.5",
+    "vitest": "^2.1.9"
   }
 }

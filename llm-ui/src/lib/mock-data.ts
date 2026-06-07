@@ -102,7 +102,7 @@ export type Provider = {
 export const PROVIDERS: Provider[] = [
   { id: "p_openai", name: "OpenAI", keyLabel: "key1", icon: "sparkles", status: "connected", masked: "sk-•••••••••••••••• a91f", models: ["gpt-5", "gpt-4o", "o3-mini"], usage: 61, scope: "org" },
   { id: "p_anthropic", name: "Anthropic", keyLabel: "key2", icon: "bot", status: "connected", masked: "sk-ant-•••••••••• 7c2d", models: ["claude-opus-4", "claude-sonnet-4"], usage: 34, scope: "org" },
-  { id: "p_ollama", name: "Ollama", keyLabel: "local", icon: "hard-drive", status: "local", masked: "http://localhost:11434", models: ["llama3.3:70b", "qwen2.5:32b"], usage: 5, scope: "org" },
+  { id: "p_ollama", name: "Ollama", keyLabel: "local", icon: "hard-drive", status: "local", masked: "http://100.107.85.81:11434", models: ["ollama/gemma3:4b"], usage: 5, scope: "org" },
 ];
 
 export type Template = {
