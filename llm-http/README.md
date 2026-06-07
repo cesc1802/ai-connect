@@ -27,8 +27,6 @@ pnpm --filter @ai-connect/http dev
 | `DEMO_USERS` | No | [] | JSON array of seeded users |
 | `RATE_LIMIT_LOGIN_WINDOW_MS` | No | 900000 | Login rate limit window (15 min) |
 | `RATE_LIMIT_LOGIN_MAX` | No | 5 | Max login attempts per window |
-| `RATE_LIMIT_CHAT_WINDOW_MS` | No | 3600000 | Chat rate limit window (1 hour) |
-| `RATE_LIMIT_CHAT_MAX` | No | 60 | Max chat requests per window |
 | `ANTHROPIC_API_KEY` | No | - | Anthropic API key |
 | `OPENAI_API_KEY` | No | - | OpenAI API key |
 | `OLLAMA_BASE_URL` | No | http://localhost:11434 | Ollama server URL |
@@ -68,7 +66,7 @@ Response:
 ```bash
 curl -X POST http://localhost:3000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username": "demo", "password": "password123"}'
+  -d '{"username": "demo", "password": "admin123456"}'
 ```
 
 Success (200):
@@ -84,38 +82,12 @@ Error (401):
 { "code": "invalid_credentials", "message": "Invalid username or password" }
 ```
 
-### REST Chat
-
-```bash
-curl -X POST http://localhost:3000/chat \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
-  -d '{
-    "model": "claude-sonnet-4",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "maxTokens": 1024
-  }'
-```
-
-Success (200):
-```json
-{
-  "id": "msg_xxx",
-  "content": "Hello! How can I help you today?",
-  "toolCalls": [],
-  "usage": { "inputTokens": 10, "outputTokens": 15, "totalTokens": 25 },
-  "model": "claude-sonnet-4",
-  "finishReason": "stop",
-  "latencyMs": 345
-}
-```
-
 ## WebSocket Protocol
 
-Connect with JWT token in query parameter:
+Chat is served exclusively over WebSocket at `/ws/chat/v2`. Connect with a JWT token in the query parameter:
 
 ```bash
-wscat -c "ws://localhost:3000/chat?token=<jwt>"
+wscat -c "ws://localhost:3000/ws/chat/v2?token=<jwt>"
 ```
 
 ### Client Messages
@@ -196,9 +168,7 @@ interface AppContainer {
   userRepository: UserRepository;
   credentialsVerifier: CredentialsVerifier;
   jwtService: JwtService;
-  streamChatUseCase: StreamChatUseCase;
-  oneShotChatUseCase: OneShotChatUseCase;
-  wsCommandHandlers: WsCommandHandlerMap;
+  chatHandler: ChatHandler;
 }
 ```
 

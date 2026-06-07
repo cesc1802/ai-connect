@@ -2,7 +2,6 @@ import express, { type Express } from "express";
 import type { AppContainer } from "./container.js";
 import { createHealthRoutes } from "./health/health-routes.js";
 import { createAuthRoutes } from "./auth/auth-routes.js";
-import { createChatRestRoutes } from "./chat/chat-rest-routes.js";
 import {
   createRequireAuth,
   createRequireOrgAdmin,
@@ -40,20 +39,11 @@ export function createApp(container: AppContainer): Express {
     message: "Too many login attempts",
   });
 
-  const chatLimit = createRateLimit({
-    windowMs: config.RATE_LIMIT_CHAT_WINDOW_MS,
-    max: config.RATE_LIMIT_CHAT_MAX,
-    keyBy: "user",
-    code: "rate_limited",
-    message: "Too many chat requests",
-  });
-
   const requireAuth = createRequireAuth(container);
 
   app.use("/health", createHealthRoutes(container));
   app.use("/auth/login", loginLimit);
   app.use("/auth", createAuthRoutes(container));
-  app.use("/chat", requireAuth, chatLimit, createChatRestRoutes(container));
   app.use(
     "/admin/org/users",
     requireAuth,

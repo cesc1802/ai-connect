@@ -613,9 +613,7 @@ HTTP Response
 | `/health` | GET | No | No | Health check endpoint | ✅ |
 | `/auth/login` | POST | No | Yes (IP) | Login with credentials | ✅ |
 | `/auth` | * | No | No | Auth routes | ✅ |
-| `/chat` | POST | Yes | Yes (User) | REST chat request | ✅ |
-| `/ws/chat` | Upgrade | Query Token | No | Legacy WebSocket streaming | ✅ |
-| `/ws/chat/v2` | Upgrade | Query Token | No | Event-driven WebSocket (new) | ✅ Phase 5 |
+| `/ws/chat/v2` | Upgrade | Query Token | No | Event-driven WebSocket | ✅ |
 
 **Production Configuration:**
 - Trust proxy: Enabled (respects X-Forwarded-For header)
@@ -707,135 +705,7 @@ Shutdown handler called
 
 ---
 
-### Layer 3: Chat Handler Layer (chat/)
-
-**Responsibilities:**
-- Handle WebSocket message reception and routing via Command Pattern
-- Validate client messages with Zod schemas
-- Manage streaming operations with abort control
-- Map errors to client-friendly error codes
-- Enforce backpressure and message size limits
-
-**Components:**
-
-1. **Command Handler Interface** (`handlers/ws-command-handler.ts`)
-   - `WsCommandHandler<T extends ClientMessage>`: Generic handler interface
-   - `type: T["type"]`: Message type discriminator
-   - `handle(socket, msg, send, ctx): void`: Handler method signature
-   - Supports type-safe dispatch via discriminated union types
-
-2. **Handler Implementations:**
-   - **ChatCommandHandler** (`handlers/chat-command-handler.ts`)
-     - Handles `{ type: "chat" }` messages
-     - Parses model, messages, maxTokens (default: 4096), temperature
-     - Executes `StreamChatUseCase.execute()` with callbacks
-     - Aborts previous stream if new chat arrives
-   - **PingCommandHandler** (`handlers/ping-command-handler.ts`)
-     - Handles `{ type: "ping" }` messages for keepalive
-     - Responds with `{ type: "pong" }` message
-
-3. **Message Validation** (`chat-message-validator.ts`)
-   - Zod schema: `clientMessageSchema` (discriminated union)
-   - Chat message schema:
-     - `type: "chat"`
-     - `id: string` (1-64 chars)
-     - `model: string` (non-empty)
-     - `messages: ChatMessage[]` (at least 1)
-     - `maxTokens?: number` (1-8192, optional)
-     - `temperature?: number` (0-2, optional)
-   - Ping message schema:
-     - `type: "ping"`
-     - `id?: string` (optional)
-
-4. **Streaming Use Case** (`stream-chat-use-case.ts`)
-   - Wraps `ChatGatewayPort.stream()` with AbortController
-   - Implements callbacks pattern:
-     - `onChunk(delta: string)`: Emitted for each text chunk
-     - `onDone(usage, finishReason)`: Final message with metrics
-     - `onError(err)`: Error propagation
-   - Returns `StreamHandle`:
-     - `abort()`: Aborts stream via AbortController
-     - `done: Promise<void>`: Completes when stream ends
-
-5. **Error Mapping** (`error-mapper.ts`)
-   - Maps typed error names to client codes:
-     - `AuthenticationError` → `"provider_auth_error"`
-     - `RateLimitError` → `"provider_rate_limit"`
-     - `TimeoutError` → `"provider_timeout"`
-     - `CircuitOpenError` → `"provider_unavailable"`
-     - `FallbackExhaustedError` → `"all_providers_failed"`
-     - `ValidationError` → `"invalid_request"`
-     - `ModelNotFoundError` → `"model_not_found"`
-     - `ContentFilterError` → `"content_filtered"`
-     - `AbortError` → `"request_cancelled"`
-     - Default → `"internal_error"`
-   - `sanitizeErrorMessage()`: Returns generic message for internal errors
-
-6. **Main Handler Router** (`chat-ws-handler.ts`)
-   - Function: `attachChatHandler(handlers, logger): (socket) => void`
-   - Creates `HandlerContext` with `activeStream: { handle: null }`
-   - Validates all messages:
-     - **Message size limit**: 1MB (checks `rawStr.length`)
-     - **JSON parsing**: Catches JSON errors with error response
-     - **Schema validation**: Uses Zod safeParse with first error reported
-   - Handles dispatch:
-     - Looks up handler by message type
-     - Invokes `handler.handle(socket, msg, send, ctx)`
-   - **Backpressure control**:
-     - Checks `ws.bufferedAmount > 1MB` before sending
-     - Drops message with warning log if threshold exceeded
-   - Cleanup on close: Aborts active stream
-
-**Chat Handler Flow:**
-
-```
-WebSocket message arrives
-    ↓
-Check size (> 1MB)
-    ├─ YES: Send "message_too_large" error
-    └─ NO: Continue
-    
-Parse JSON
-    ├─ FAIL: Send "invalid_json" error
-    └─ SUCCESS: Continue
-    
-Validate against clientMessageSchema
-    ├─ FAIL: Send "invalid_message" error with first issue
-    └─ SUCCESS: Continue
-    
-Find handler by msg.type
-    ├─ NOT FOUND: Send "unknown_type" error
-    └─ FOUND: Continue
-    
-Check backpressure (bufferedAmount > 1MB)
-    ├─ EXCEEDED: Log warning, drop future message
-    └─ OK: Queue response
-    
-Invoke handler.handle(socket, msg, send, ctx)
-    ├─ ChatCommandHandler:
-    │   └─ Execute stream with callbacks
-    │       └─ onChunk → send({ type: "chunk" })
-    │       └─ onDone → send({ type: "done" })
-    │       └─ onError → send({ type: "error", code, message })
-    └─ PingCommandHandler:
-        └─ send({ type: "pong" })
-```
-
-**Handler Context Management:**
-
-```typescript
-interface HandlerContext {
-  activeStream: { handle: StreamHandle | null };
-}
-
-// Only one stream active per connection
-// New chat aborts previous stream
-// Stream aborted on connection close
-```
-
----
-
-### Layer 3b: Event-Driven WebSocket v2 (`/ws/chat/v2`)
+### Layer 3: Event-Driven WebSocket v2 (`/ws/chat/v2`)
 
 **Status:** ✅ Implemented (Phase 5, April 19, 2026)
 
@@ -872,85 +742,7 @@ Client c.chat.send → ConnectionSession → EventBus (chat.requested)
 
 ---
 
-### Layer 4: REST Chat Endpoint (chat/chat-rest-routes.ts)
-
-**Responsibilities:**
-- Handle synchronous POST /chat requests (one-shot, non-streaming)
-- Validate request body with Zod schemas
-- Execute single chat request and return complete response
-- Delegate to OneShotChatUseCase for business logic
-
-**Request Validation:**
-
-```typescript
-POST /chat
-Content-Type: application/json
-Authorization: Bearer <jwt>
-
-{
-  "model": "claude-sonnet-4",
-  "messages": [
-    { "role": "user", "content": "Hello!" }
-  ],
-  "maxTokens": 4096,
-  "temperature": 0.7
-}
-```
-
-**Schema:**
-- `model`: string, non-empty (required)
-- `messages`: array of message objects (required, min 1)
-  - `role`: "user" | "assistant" | "system" | "tool"
-  - `content`: string or array (for multimodal)
-- `maxTokens`: integer, 1-8192 (optional, default: 4096)
-- `temperature`: number, 0-2 (optional)
-
-**Response Format:**
-
-```json
-{
-  "id": "msg_xxx",
-  "content": "Response text",
-  "toolCalls": [],
-  "usage": {
-    "inputTokens": 10,
-    "outputTokens": 25,
-    "totalTokens": 35
-  },
-  "model": "claude-sonnet-4",
-  "finishReason": "stop",
-  "latencyMs": 345
-}
-```
-
-**Error Responses:**
-
-| Code | Status | Cause |
-|------|--------|-------|
-| `invalid_body` | 400 | Request validation failed |
-| `provider_auth_error` | 401 | Provider authentication failed |
-| `provider_rate_limit` | 429 | Provider rate limit exceeded |
-| `provider_timeout` | 504 | Request timeout |
-| `provider_unavailable` | 503 | Circuit breaker open |
-| `all_providers_failed` | 503 | All fallback providers failed |
-| `model_not_found` | 400 | Model not available |
-| `content_filtered` | 400 | Content policy violation |
-| `internal_error` | 500 | Unexpected server error |
-
-**Difference from WebSocket Streaming:**
-
-| Feature | REST `/chat` | WebSocket `/chat` |
-|---------|--------------|-------------------|
-| Response Type | Complete response | Streaming chunks |
-| Latency | Full request latency | Incremental (lower perceived latency) |
-| Use Case | Quick responses, low throughput | Long-form text, real-time feedback |
-| Connection | Single request-response | Persistent bidirectional |
-| Cancellation | N/A (already complete) | Via abort signal |
-| Backpressure | HTTP-level | Buffered amount tracking |
-
----
-
-### Layer 5: Rate Limiting (shared/rate-limit.ts)
+### Layer 4: Rate Limiting (shared/rate-limit.ts)
 
 **Responsibilities:**
 - Apply request throttling to protect endpoints
@@ -963,15 +755,12 @@ Authorization: Bearer <jwt>
 | Endpoint | Key | Limit | Window | Config Variable |
 |----------|-----|-------|--------|-----------------|
 | `/auth/login` | Client IP | 5 | 15 minutes | `RATE_LIMIT_LOGIN_*` |
-| `/chat` | User ID | 60 | 1 hour | `RATE_LIMIT_CHAT_*` |
 
 **Environment Variables:**
 
 ```bash
 RATE_LIMIT_LOGIN_WINDOW_MS=900000      # 15 minutes (default)
 RATE_LIMIT_LOGIN_MAX=5                 # 5 attempts (default)
-RATE_LIMIT_CHAT_WINDOW_MS=3600000      # 1 hour (default)
-RATE_LIMIT_CHAT_MAX=60                 # 60 requests (default)
 ```
 
 **Implementation Details:**
@@ -1019,7 +808,7 @@ When deployed behind a reverse proxy:
 
 ---
 
-### Layer 6: Authentication Layer (auth/)
+### Layer 5: Authentication Layer (auth/)
 
 **Components:**
 
@@ -1101,7 +890,7 @@ When deployed behind a reverse proxy:
 
 ---
 
-### Layer 7: Data Access Layer (auth/)
+### Layer 6: Data Access Layer (auth/)
 
 **Repository Pattern:**
 
@@ -1143,7 +932,7 @@ interface UserRecord {
 
 ---
 
-### Layer 8: Dependency Injection Layer (container.ts)
+### Layer 7: Dependency Injection Layer (container.ts)
 
 **Container Interface:**
 
@@ -1232,8 +1021,6 @@ Container
 | `DEMO_USERS` | string (JSON) | No | "[]" | Initial user seed data as JSON array |
 | `RATE_LIMIT_LOGIN_WINDOW_MS` | number | No | 900000 | Login rate limit window (15 minutes) |
 | `RATE_LIMIT_LOGIN_MAX` | number | No | 5 | Max login attempts per window |
-| `RATE_LIMIT_CHAT_WINDOW_MS` | number | No | 3600000 | Chat rate limit window (1 hour) |
-| `RATE_LIMIT_CHAT_MAX` | number | No | 60 | Max chat requests per window |
 
 **Authentication Environment Variables:**
 
@@ -1259,8 +1046,6 @@ DEMO_USERS='[{"id":"user-1","username":"demo","passwordHash":"$2a$10$..."}]'
 # Rate limiting (optional - defaults shown)
 RATE_LIMIT_LOGIN_WINDOW_MS=900000      # 15 minutes
 RATE_LIMIT_LOGIN_MAX=5
-RATE_LIMIT_CHAT_WINDOW_MS=3600000      # 1 hour
-RATE_LIMIT_CHAT_MAX=60
 
 # LLM Provider configuration (if using gateway)
 ANTHROPIC_API_KEY="sk-ant-..."
@@ -1309,101 +1094,16 @@ HTTP/1.1 401 Unauthorized
 }
 ```
 
-**Protected Route Access:**
-
-```http
-GET /chat HTTP/1.1
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-
-HTTP/1.1 200 OK
-(route executes with authenticated user context)
-```
-
 **Missing Token:**
 
 ```http
-GET /chat HTTP/1.1
+GET /health HTTP/1.1
 
 HTTP/1.1 401 Unauthorized
 {
   "code": "missing_token",
   "message": "Authorization header required"
 }
-```
-
-**REST Chat Request (Success):**
-
-```http
-POST /chat HTTP/1.1
-Content-Type: application/json
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-
-{
-  "model": "claude-sonnet-4",
-  "messages": [
-    { "role": "user", "content": "What is 2+2?" }
-  ],
-  "maxTokens": 1024,
-  "temperature": 0.7
-}
-
-HTTP/1.1 200 OK
-{
-  "id": "msg_1234567890",
-  "content": "2+2=4",
-  "toolCalls": [],
-  "usage": {
-    "inputTokens": 12,
-    "outputTokens": 5,
-    "totalTokens": 17
-  },
-  "model": "claude-sonnet-4",
-  "finishReason": "stop",
-  "latencyMs": 234
-}
-```
-
-**REST Chat with Validation Error:**
-
-```http
-POST /chat HTTP/1.1
-Content-Type: application/json
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-
-{
-  "model": "",
-  "messages": []
-}
-
-HTTP/1.1 400 Bad Request
-{
-  "code": "invalid_body",
-  "message": "model: String must contain at least 1 character; messages: Array must contain at least 1 element(s)"
-}
-```
-
-**Rate Limited (Too Many Chat Requests):**
-
-```http
-POST /chat HTTP/1.1
-Content-Type: application/json
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-
-{
-  "model": "claude-sonnet-4",
-  "messages": [{ "role": "user", "content": "Hello" }]
-}
-
-HTTP/1.1 429 Too Many Requests
-{
-  "code": "rate_limited",
-  "message": "Too many chat requests"
-}
-
-Headers:
-RateLimit-Limit: 60
-RateLimit-Remaining: 0
-RateLimit-Reset: 1713549600
 ```
 
 ---

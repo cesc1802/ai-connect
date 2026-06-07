@@ -813,47 +813,33 @@ export class JwtService {
 
 **Purpose:** Dispatch messages to type-specific handlers using discriminated unions and polymorphism.
 
+**Example Pattern (illustrative):**
+
 ```typescript
 // ✓ Do: Define handler interface with type discriminator
-export interface WsCommandHandler<T extends ClientMessage = ClientMessage> {
-  readonly type: T["type"]; // Discriminator: "chat" | "ping"
-  handle(socket: AuthenticatedSocket, msg: T, send: SendFn, ctx: HandlerContext): void;
+export interface MessageHandler<T extends Message = Message> {
+  readonly type: T["type"]; // Discriminator: "request-a" | "request-b"
+  handle(msg: T, send: SendFn, ctx: Context): void;
 }
 
 // ✓ Do: Implement handlers for each message type
-export class ChatCommandHandler implements WsCommandHandler<ChatMessage> {
-  readonly type = "chat" as const;
+export class RequestAHandler implements MessageHandler<RequestAMessage> {
+  readonly type = "request-a" as const;
 
-  constructor(private readonly streamChat: StreamChatUseCase) {}
-
-  handle(socket: AuthenticatedSocket, msg: ChatMessage, send: SendFn, ctx: HandlerContext): void {
-    ctx.activeStream.handle?.abort(); // Cancel previous stream
-    
-    ctx.activeStream.handle = this.streamChat.execute(
-      { model: msg.model, messages: msg.messages, maxTokens: msg.maxTokens ?? 4096 },
-      {
-        onChunk: (delta) => send({ type: "chunk", delta }),
-        onDone: (usage, finishReason) => {
-          send({ type: "done", usage, finishReason });
-          ctx.activeStream.handle = null;
-        },
-        onError: (err) => {
-          send({ type: "error", code: mapErrorToCode(err), message: sanitizeErrorMessage(err) });
-          ctx.activeStream.handle = null;
-        },
-      }
-    );
+  handle(msg: RequestAMessage, send: SendFn, ctx: Context): void {
+    // Process message and send responses
+    send({ type: "response", data: result });
   }
 }
 
 // ✓ Do: Create handler map for dispatch
-type WsCommandHandlerMap = {
-  [K in ClientMessage["type"]]?: WsCommandHandler<Extract<ClientMessage, { type: K }>>;
+type HandlerMap = {
+  [K in Message["type"]]?: MessageHandler<Extract<Message, { type: K }>>;
 };
 
-const handlers: WsCommandHandlerMap = {
-  chat: new ChatCommandHandler(streamChat),
-  ping: new PingCommandHandler(),
+const handlers: HandlerMap = {
+  "request-a": new RequestAHandler(),
+  "request-b": new RequestBHandler(),
 };
 
 // ✓ Do: Use discriminated union to ensure type safety
@@ -872,23 +858,23 @@ const handler = handlers[msg.type as string]; // Lost type information
 ```typescript
 // ✓ Do: Share mutable context across handler invocations
 interface HandlerContext {
-  activeStream: { handle: StreamHandle | null };
+  activeRequest: { id: string | null };
   // Add other state that needs to persist across messages
 }
 
 // Context created once per connection
-const ctx: HandlerContext = { activeStream: { handle: null } };
+const ctx: HandlerContext = { activeRequest: { id: null } };
 
 // Reused for each incoming message
-ws.on("message", (raw) => {
+conn.on("message", (raw) => {
   // Parse and dispatch to handler
-  handler.handle(socket, msg, send, ctx); // Context carries state
+  handler.handle(msg, send, ctx); // Context carries state
 });
 
 // ✗ Don't: Create new context per message (loses state)
-ws.on("message", (raw) => {
-  const ctx = { activeStream: { handle: null } }; // Fresh context = lost stream reference
-  handler.handle(socket, msg, send, ctx);
+conn.on("message", (raw) => {
+  const ctx = { activeRequest: { id: null } }; // Fresh context = lost request reference
+  handler.handle(msg, send, ctx);
 });
 ```
 

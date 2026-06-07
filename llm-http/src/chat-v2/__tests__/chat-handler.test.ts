@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ChatHandler } from "../chat-handler.js";
 import { EventBus } from "../../events/event-bus.js";
 import type { ChatEvent, ChatRequested } from "@ai-connect/shared";
-import type { ChatGatewayPort } from "../../chat/chat-gateway-port.js";
+import type { ChatGatewayPort } from "../chat-gateway-port.js";
 import type { StreamChunk, TokenUsage, FinishReason } from "llm-gateway";
 import type { Logger } from "../../logger.js";
 

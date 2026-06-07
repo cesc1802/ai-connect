@@ -35,10 +35,6 @@ export interface V2WebSocketHandle {
 export function attachChatV2Server(httpServer: Server, deps: V2ServerDeps): V2WebSocketHandle {
   const wss = new WebSocketServer({ noServer: true });
 
-  const existingUpgradeListeners = httpServer.listeners("upgrade").slice();
-
-  httpServer.removeAllListeners("upgrade");
-
   httpServer.on("upgrade", (req, socket, head) => {
     if (req.url?.startsWith("/ws/chat/v2")) {
       const result = authenticateUpgrade(req, deps.jwtService);
@@ -54,9 +50,8 @@ export function attachChatV2Server(httpServer: Server, deps: V2ServerDeps): V2We
         wss.emit("connection", authed, req);
       });
     } else {
-      for (const listener of existingUpgradeListeners) {
-        (listener as (req: unknown, socket: unknown, head: unknown) => void)(req, socket, head);
-      }
+      socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+      socket.destroy();
     }
   });
 

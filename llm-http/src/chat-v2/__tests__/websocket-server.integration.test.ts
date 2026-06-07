@@ -8,7 +8,7 @@ import { InMemoryMessageRepository } from "../../repositories/in-memory-message-
 import { ChatHandler } from "../chat-handler.js";
 import { attachChatV2Server, type V2ServerDeps, type V2WebSocketHandle } from "../websocket-server.js";
 import type { ChatEvent } from "@ai-connect/shared";
-import type { ChatGatewayPort } from "../../chat/chat-gateway-port.js";
+import type { ChatGatewayPort } from "../chat-gateway-port.js";
 import type { StreamChunk } from "llm-gateway";
 import type { JwtService } from "../../auth/jwt-service.js";
 

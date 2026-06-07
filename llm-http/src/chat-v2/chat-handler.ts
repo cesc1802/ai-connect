@@ -1,8 +1,8 @@
 import type { EventBus } from "../events/event-bus.js";
 import type { ChatEvent, ChatRequested } from "@ai-connect/shared";
-import type { ChatGatewayPort } from "../chat/chat-gateway-port.js";
+import type { ChatGatewayPort } from "./chat-gateway-port.js";
 import type { Logger } from "../logger.js";
-import { mapErrorToCode, sanitizeErrorMessage } from "../chat/error-mapper.js";
+import { mapErrorToCode, sanitizeErrorMessage } from "./error-mapper.js";
 import { adaptStreamDeltaToTokenDelta } from "./gateway-chunk-adapter.js";
 
 interface AbortControllerWithReason extends AbortController {

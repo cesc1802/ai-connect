@@ -493,22 +493,7 @@ llm-http/src/
 │   ├── in-memory-user-repository.ts  # In-memory implementation
 │   └── seed-users.ts            # User seeding from config
 │
-├── chat/                         # Legacy chat functionality (Phase 1-3)
-│   ├── chat-gateway-port.ts     # Gateway interface (ports/adapters)
-│   ├── llm-gateway-adapter.ts   # Production adapter
-│   ├── null-gateway-adapter.ts  # Stub for no-provider mode
-│   ├── chat-message-validator.ts # Zod schemas for WS messages
-│   ├── stream-chat-use-case.ts  # Streaming chat orchestration
-│   ├── one-shot-chat-use-case.ts # REST chat orchestration
-│   ├── chat-rest-routes.ts      # POST /chat endpoint
-│   ├── chat-ws-handler.ts       # WebSocket message router
-│   ├── error-mapper.ts          # Error-to-code mapping
-│   └── handlers/                # Command pattern handlers
-│       ├── ws-command-handler.ts # Handler interface
-│       ├── chat-command-handler.ts # Chat message handler
-│       └── ping-command-handler.ts # Ping/pong handler
-│
-├── chat-v2/                      # Event-driven chat (Phase 5+)
+├── chat-v2/                      # Event-driven chat
 │   ├── websocket-server.ts      # WebSocket server with event subscriptions
 │   ├── connection-session.ts    # Single client session lifecycle
 │   ├── chat-handler.ts          # Event-driven gateway bridge
@@ -534,10 +519,8 @@ llm-http/src/
 │   ├── index.ts                 # Exports
 │   └── __tests__/               # Repository tests
 │
-├── ws/                           # Legacy WebSocket server (Phase 1)
-│   ├── ws-server.ts             # WS server with heartbeat
-│   ├── ws-upgrade-auth.ts       # JWT auth on upgrade
-│   └── ws-types.ts              # AuthenticatedSocket type
+├── ws/                           # WebSocket utilities
+│   └── ws-upgrade-auth.ts       # JWT auth on upgrade
 │
 ├── health/                       # Health endpoint
 │   └── health-routes.ts         # GET /health
@@ -553,21 +536,18 @@ llm-http/src/
 └── index.ts                      # Server entry point
 ```
 
-**Key Features (Legacy Phases 1-3):**
+**Key Features:**
 - JWT authentication with bcrypt password hashing
-- REST POST /chat for synchronous requests
-- WebSocket /ws/chat legacy endpoint with backpressure handling
-- Rate limiting per IP (login) and per user (chat)
-- Command pattern for extensible message handling
+- Rate limiting per IP (login endpoint)
 - Manual DI container (no framework)
 - Ports and adapters for testability
 
-**Event-Driven Architecture (Phases 4-5):**
+**Event-Driven Architecture:**
 - EventBus pub/sub system for decoupled message flow
 - ConnectionRegistry tracks active WebSocket sessions
 - Local message routing for inter-module communication
 - In-memory conversation and message repositories
-- New `/ws/chat/v2` endpoint with event-driven protocol
+- `/ws/chat/v2` endpoint with event-driven protocol
 - ChatHandler bridges LLM gateway to event streaming
 - ConnectionSession manages per-client lifecycle
 

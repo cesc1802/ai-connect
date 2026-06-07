@@ -3,9 +3,9 @@ import type { AuditEmitter } from "@ai-connect/shared";
 import type { Config } from "./config.js";
 import { extractProviderConfigs } from "./config.js";
 import type { Logger } from "./logger.js";
-import type { ChatGatewayPort } from "./chat/chat-gateway-port.js";
-import { LlmGatewayAdapter } from "./chat/llm-gateway-adapter.js";
-import { NullGatewayAdapter } from "./chat/null-gateway-adapter.js";
+import type { ChatGatewayPort } from "./chat-v2/chat-gateway-port.js";
+import { LlmGatewayAdapter } from "./chat-v2/llm-gateway-adapter.js";
+import { NullGatewayAdapter } from "./chat-v2/null-gateway-adapter.js";
 import type { UserRepository } from "./auth/user-repository.js";
 import { InMemoryUserRepository } from "./auth/in-memory-user-repository.js";
 import { seedUsers } from "./auth/seed-users.js";
@@ -42,11 +42,6 @@ import {
   StubUsageCounter,
   WsQuotasService,
 } from "./admin/workspace/quotas-service.js";
-import { StreamChatUseCase } from "./chat/stream-chat-use-case.js";
-import { OneShotChatUseCase } from "./chat/one-shot-chat-use-case.js";
-import { ChatCommandHandler } from "./chat/handlers/chat-command-handler.js";
-import { PingCommandHandler } from "./chat/handlers/ping-command-handler.js";
-import type { WsCommandHandlerMap } from "./chat/chat-ws-handler.js";
 import type { ChatEvent } from "@ai-connect/shared";
 import { EventBus } from "./events/event-bus.js";
 import { LocalConnectionRegistry } from "./transport/local-connection-registry.js";
@@ -75,9 +70,6 @@ export interface AppContainer {
   wsTemplatesService: WsTemplatesService;
   wsQuotasService: WsQuotasService;
   apiKeyVault: ApiKeyVault;
-  streamChatUseCase: StreamChatUseCase;
-  oneShotChatUseCase: OneShotChatUseCase;
-  wsCommandHandlers: WsCommandHandlerMap;
   bus: EventBus<ChatEvent>;
   registry: ConnectionRegistry;
   convRepo: ConversationRepository;
@@ -154,15 +146,6 @@ export function buildContainer(config: Config, logger: Logger): AppContainer {
     logger,
   );
 
-  const streamChatUseCase = new StreamChatUseCase(chatGateway);
-  const oneShotChatUseCase = new OneShotChatUseCase(chatGateway);
-  const chatCommandHandler = new ChatCommandHandler(streamChatUseCase);
-  const pingCommandHandler = new PingCommandHandler();
-  const wsCommandHandlers: WsCommandHandlerMap = {
-    chat: chatCommandHandler,
-    ping: pingCommandHandler,
-  };
-
   const bus = new EventBus<ChatEvent>({ logger });
   const registry = new LocalConnectionRegistry();
   const convRepo = new InMemoryConversationRepository();
@@ -186,9 +169,6 @@ export function buildContainer(config: Config, logger: Logger): AppContainer {
     wsTemplatesService,
     wsQuotasService,
     apiKeyVault,
-    streamChatUseCase,
-    oneShotChatUseCase,
-    wsCommandHandlers,
     bus,
     registry,
     convRepo,
