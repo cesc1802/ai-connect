@@ -115,7 +115,7 @@ export function WorkspaceDetailScreen() {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">{p.name}</p>
-                <p className="text-2xs text-muted-foreground">{p.models.join(" • ")}</p>
+                <p className="text-2xs text-muted-foreground">{p.model}</p>
               </div>
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
             </div>

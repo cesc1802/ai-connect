@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from "react";
+
 export type OrgRoleKey = "owner" | "admin" | "member";
 export type WsRoleKey = "wsadmin" | "pm" | "ba" | "qa" | "dev";
 
@@ -87,23 +89,104 @@ export const WORKSPACES: Workspace[] = [
   },
 ];
 
+export type ProviderScope = "org" | "select";
 export type Provider = {
   id: string;
+  providerKey: string;
   name: string;
   keyLabel: string;
   icon: string;
   status: "connected" | "local";
   masked: string;
-  models: string[];
+  host: string;
+  model: string;
   usage: number;
-  scope: "org";
+  scope: ProviderScope;
 };
 
-export const PROVIDERS: Provider[] = [
-  { id: "p_openai", name: "OpenAI", keyLabel: "key1", icon: "sparkles", status: "connected", masked: "sk-•••••••••••••••• a91f", models: ["gpt-5", "gpt-4o", "o3-mini"], usage: 61, scope: "org" },
-  { id: "p_anthropic", name: "Anthropic", keyLabel: "key2", icon: "bot", status: "connected", masked: "sk-ant-•••••••••• 7c2d", models: ["claude-opus-4", "claude-sonnet-4"], usage: 34, scope: "org" },
-  { id: "p_ollama", name: "Ollama", keyLabel: "local", icon: "hard-drive", status: "local", masked: "http://100.107.85.81:11434", models: ["ollama/gemma3:4b"], usage: 5, scope: "org" },
+export type ProviderCatalogEntry = {
+  key: string;
+  name: string;
+  icon: string;
+  type: "api" | "local";
+  models: string[];
+  host: string;
+  keyHint?: string;
+  docs?: string;
+  endpointPlaceholder?: string;
+};
+
+// Known providers users can add. Models listed are the supported set
+// shown in the picker; users select a subset to register for the org.
+export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
+  {
+    key: "openai", name: "OpenAI", icon: "sparkles", type: "api",
+    host: "https://api.openai.com/v1", keyHint: "sk-...", docs: "platform.openai.com",
+    models: ["gpt-5", "gpt-4o", "gpt-4o-mini", "o3-mini", "o1"],
+  },
+  {
+    key: "anthropic", name: "Anthropic", icon: "bot", type: "api",
+    host: "https://api.anthropic.com", keyHint: "sk-ant-...", docs: "console.anthropic.com",
+    models: ["claude-opus-4", "claude-sonnet-4", "claude-haiku-4"],
+  },
+  {
+    key: "google", name: "Google Gemini", icon: "sparkles", type: "api",
+    host: "https://generativelanguage.googleapis.com", keyHint: "AIza...", docs: "aistudio.google.com",
+    models: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+  },
+  {
+    key: "minimax", name: "MiniMax", icon: "zap", type: "api",
+    host: "https://api.minimax.chat/v1", keyHint: "mx-...", docs: "platform.minimaxi.com",
+    models: ["abab6.5", "abab6.5-chat"],
+  },
+  {
+    key: "ollama", name: "Ollama", icon: "hard-drive", type: "local",
+    host: "http://localhost:11434", docs: "ollama.com",
+    endpointPlaceholder: "http://localhost:11434",
+    models: ["ollama/gemma3:4b", "ollama/llama3.1:8b", "ollama/qwen2.5:7b", "ollama/mistral:7b"],
+  },
 ];
+
+export function catalogByKey(key: string): ProviderCatalogEntry | undefined {
+  return PROVIDER_CATALOG.find((p) => p.key === key);
+}
+
+const PROVIDER_SEED: Provider[] = [
+  { id: "p_openai", providerKey: "openai", name: "OpenAI", keyLabel: "key1", icon: "sparkles", status: "connected", masked: "sk-•••••••••••••••• a91f", host: "https://api.openai.com/v1", model: "gpt-5", usage: 61, scope: "org" },
+  { id: "p_anthropic", providerKey: "anthropic", name: "Anthropic", keyLabel: "key2", icon: "bot", status: "connected", masked: "sk-ant-•••••••••• 7c2d", host: "https://api.anthropic.com", model: "claude-sonnet-4", usage: 34, scope: "org" },
+  { id: "p_ollama", providerKey: "ollama", name: "Ollama", keyLabel: "local", icon: "hard-drive", status: "local", masked: "http://100.107.85.81:11434", host: "http://100.107.85.81:11434", model: "ollama/gemma3:4b", usage: 5, scope: "org" },
+];
+
+// Module-level store so list / detail / edit screens stay in sync without
+// pulling in a state library. useProviders() subscribes via useSyncExternalStore.
+let _providers: Provider[] = [...PROVIDER_SEED];
+const _subs = new Set<() => void>();
+function _notify() { _subs.forEach((fn) => fn()); }
+function _subscribe(fn: () => void) { _subs.add(fn); return () => { _subs.delete(fn); }; }
+function _snapshot() { return _providers; }
+
+export const PROVIDERS = _providers; // back-compat: still readable as a constant
+
+export function getProviders(): Provider[] { return _providers; }
+export function providerById(id: string): Provider | undefined {
+  return _providers.find((p) => p.id === id);
+}
+export function addProvider(p: Provider) {
+  _providers = [..._providers, p];
+  _notify();
+}
+export function updateProvider(id: string, patch: Partial<Provider>) {
+  _providers = _providers.map((p) => (p.id === id ? { ...p, ...patch } : p));
+  _notify();
+}
+export function removeProvider(id: string) {
+  _providers = _providers.filter((p) => p.id !== id);
+  _notify();
+}
+
+export function useProviders(): Provider[] {
+  return useSyncExternalStore(_subscribe, _snapshot, _snapshot);
+}
 
 export type Template = {
   id: string;

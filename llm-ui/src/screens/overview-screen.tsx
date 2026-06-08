@@ -72,7 +72,7 @@ export function OverviewScreen() {
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{p.name}</p>
-                  <p className="truncate text-2xs text-muted-foreground">{p.models.length} models • {p.status === "connected" ? "Đã kết nối" : "Cục bộ"}</p>
+                  <p className="truncate text-2xs text-muted-foreground">{p.model} • {p.status === "connected" ? "Đã kết nối" : "Cục bộ"}</p>
                 </div>
                 <span className="h-2 w-2 rounded-full bg-emerald-500" />
               </div>

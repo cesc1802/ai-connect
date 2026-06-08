@@ -9,7 +9,7 @@ import { Composer } from "@/components/chat/composer";
 import { StreamingControls } from "@/components/chat/streaming-controls";
 import { ChatHistoryList } from "@/components/chat/chat-history-list";
 
-const ALL_MODELS = PROVIDERS.flatMap((p) => p.models);
+const ALL_MODELS = PROVIDERS.map((p) => p.model);
 
 export function ChatScreen() {
   const [model, setModel] = useState(ALL_MODELS[0] ?? "");
