@@ -3,7 +3,6 @@ export { InMemoryUserRepository } from "./in-memory-user-repository.js";
 export { seedUsers } from "./seed-users.js";
 export { CredentialsVerifier } from "./credentials-verifier.js";
 export { JwtService } from "./jwt-service.js";
-export type { JwtSignContext } from "./jwt-service.js";
 export {
   createRequireAuth,
   createRequireOrgAdmin,

@@ -1,4 +1,4 @@
-import type { OrgRole, WorkspaceRole } from "@ai-connect/shared";
+import type { SystemRole, OrgRole, WorkspaceRole } from "@ai-connect/shared";
 
 declare global {
   namespace Express {
@@ -6,6 +6,7 @@ declare global {
       user?: {
         id: string;
         username: string;
+        role: SystemRole;
         org: string;
         orgRole: OrgRole;
         workspace: string | null;

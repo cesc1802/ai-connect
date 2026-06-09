@@ -1,12 +1,5 @@
 import jwt from "jsonwebtoken";
-import type { JWTPayload, OrgRole, User, WorkspaceRole } from "@ai-connect/shared";
-
-export interface JwtSignContext {
-  org: string;
-  orgRole: OrgRole;
-  workspace: string | null;
-  workspaceRole: WorkspaceRole | null;
-}
+import type { JWTPayload, User } from "@ai-connect/shared";
 
 export class JwtService {
   private readonly options: jwt.SignOptions;
@@ -18,14 +11,10 @@ export class JwtService {
     this.options = { expiresIn: expiresIn as `${number}${"s" | "m" | "h" | "d"}` };
   }
 
-  sign(user: User, ctx: JwtSignContext): string {
+  sign(user: User): string {
     const claims = {
       sub: user.id,
       username: user.username,
-      org: ctx.org,
-      orgRole: ctx.orgRole,
-      workspace: ctx.workspace,
-      workspaceRole: ctx.workspaceRole,
     };
     return jwt.sign(claims, this.secret, this.options);
   }

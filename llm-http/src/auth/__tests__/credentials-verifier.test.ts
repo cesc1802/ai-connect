@@ -11,6 +11,7 @@ describe("CredentialsVerifier", () => {
   const testUser: UserRecord = {
     id: "user-123",
     username: "testuser",
+    role: "member",
     passwordHash: "", // will be set in beforeEach
   };
 

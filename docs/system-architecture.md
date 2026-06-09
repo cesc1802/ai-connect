@@ -564,17 +564,143 @@ Monorepo (ai-connect)
 │   └── REST API HTTP server
 │       ├── Express application setup
 │       ├── Authentication (JWT, credentials verification)
+│       ├── Event-driven WebSocket v2 (/ws/chat/v2)
 │       ├── Dependency injection container
 │       └── Route handlers (health, auth, chat)
 │
-└── llm-db (planned)
-    └── Database persistence layer
+└── @ai-connect/db
+    └── Postgres + Drizzle persistence layer
+        ├── Database client factory
+        ├── Typed schema (workspaces, users, conversations, messages)
+        ├── Migration CLI tools
+        └── Conversation & message repository backing
 ```
 
 **Type Sharing Strategy:**
 - `@ai-connect/shared` centralizes common types to prevent duplication
 - Packages depend on `llm-gateway` and `@ai-connect/shared` for type definitions
 - WebSocket protocol types decouple HTTP server from gateway internals
+
+**Dependency Flow:**
+
+```
+llm-http
+├── llm-gateway (for chat operations)
+├── @ai-connect/shared (for types)
+└── @ai-connect/db (for persistence)
+
+@ai-connect/db
+└── (no internal dependencies — owns its own schema and migrations)
+```
+
+---
+
+## Persistence Layer Architecture (@ai-connect/db)
+
+The persistence layer provides Postgres-backed storage for conversations, messages, and workspace metadata using Drizzle ORM.
+
+### Overview
+
+- **Technology:** Drizzle 0.36 + postgres-js driver + PostgreSQL 16
+- **Database Client:** `createDbClient(url, poolMax)` factory returns `{ db, sql, close() }`
+- **Schema:** Fully typed with inferred row types from definitions
+- **Migrations:** Forward-only SQL generated from schema changes; tracked in `_drizzle_migrations` table
+
+### Data Model
+
+```
+┌──────────────────────────────────────┐
+│      Workspace Hierarchy              │
+├──────────────────────────────────────┤
+│ workspaces (id, slug, name)          │
+│   └─ user_workspaces (user, workspace)
+│   └─ user_role_workspaces (role grants)
+│   └─ workspace_providers (provider overrides)
+└──────────────────────────────────────┘
+
+┌──────────────────────────────────────┐
+│      Chat History                     │
+├──────────────────────────────────────┤
+│ conversations (id, workspace, user, title)
+│   └─ messages (id, conversation, role, content)
+└──────────────────────────────────────┘
+
+┌──────────────────────────────────────┐
+│      Provider Configuration           │
+├──────────────────────────────────────┤
+│ provider_catalogs (registry)         │
+│ providers (instances)                │
+│ usage_metrics (quota tracking)       │
+└──────────────────────────────────────┘
+```
+
+### Scope (Chat History)
+
+**Implemented (Phase 7):**
+- Conversation storage with workspace/user scoping
+- Message persistence with role and content
+- Drizzle-backed `ConversationRepository` and `MessageRepository`
+
+**Schema Defined, Not Persisted:**
+- Admin workspace/user CRUD (in-memory only)
+- Quota enforcement (schema exists; logic in-memory)
+- Audit logging (schema exists; not persisted)
+
+### Migration Workflow
+
+```
+1. Edit schema file (llm-db/src/schema/*.ts)
+         ↓
+2. pnpm db:generate
+   - Compiles TypeScript to dist/schema/index.js
+   - Runs drizzle-kit generate against compiled schema
+   - Emits SQL migration file
+         ↓
+3. Review generated SQL in llm-db/drizzle/
+         ↓
+4. pnpm db:migrate
+   - Reads migrations in numeric order
+   - Applies to Postgres via drizzle-orm migrator
+   - Records hash in _drizzle_migrations table
+         ↓
+5. Production: node llm-db/dist/cli/migrate.js before boot
+```
+
+**Key Detail:** `pnpm db:generate` automatically compiles TypeScript first because drizzle-kit reads the compiled `.js` output (not source `.ts`), which uses Node's ESM import resolution.
+
+### Connection Lifecycle
+
+```typescript
+// Boot: Create client with environment variables
+const client = createDbClient({
+  url: process.env.DATABASE_URL,    // Required
+  poolMax: process.env.DATABASE_POOL_MAX ?? 10,
+});
+
+// Use: Access typed Drizzle instance
+const convos = await client.db.query.conversations.findMany();
+
+// Shutdown: Close connection pool
+await client.close();
+```
+
+### Error Handling
+
+- **Connection Errors** — Postgres unavailable on startup → app fails to boot
+- **Migration Errors** — Schema drift detected by `drizzle-kit check` → CI fails fast
+- **Query Errors** — Runtime SQL failures propagate; not caught by migration layer
+
+### Deployment Pattern
+
+**Pre-boot migrations ensure safety:**
+
+```bash
+# In container startup script:
+node llm-db/dist/cli/migrate.js  # Apply all pending migrations
+node llm-http/dist/index.js      # Start app after DB is ready
+```
+
+If migrations fail, app does not boot (safe failure). If app is already running and new migrations fail, they must be resolved manually before app restart.
 
 ---
 

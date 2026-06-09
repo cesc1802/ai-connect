@@ -48,10 +48,17 @@ import { LocalConnectionRegistry } from "./transport/local-connection-registry.j
 import type { ConnectionRegistry } from "./transport/connection-registry.js";
 import { InMemoryConversationRepository } from "./repositories/in-memory-conversation-repo.js";
 import { InMemoryMessageRepository } from "./repositories/in-memory-message-repo.js";
+import { DrizzleConversationRepository } from "./repositories/drizzle/conversation-repository.js";
+import { DrizzleMessageRepository } from "./repositories/drizzle/message-repository.js";
 import type {
   ConversationRepository,
   MessageRepository,
 } from "@ai-connect/shared";
+import { createDbClient, type DbClient } from "@ai-connect/db";
+import { seedDrizzleDevData } from "./auth/seed-users.js";
+import type { ActiveWorkspaceResolver } from "./workspace/active-workspace-resolver.js";
+import { InMemoryActiveWorkspaceResolver } from "./workspace/active-workspace-resolver.js";
+import { DrizzleActiveWorkspaceResolver } from "./workspace/drizzle-active-workspace-resolver.js";
 import { ChatHandler } from "./chat-v2/chat-handler.js";
 
 export interface AppContainer {
@@ -74,10 +81,15 @@ export interface AppContainer {
   registry: ConnectionRegistry;
   convRepo: ConversationRepository;
   msgRepo: MessageRepository;
+  activeWorkspaceResolver: ActiveWorkspaceResolver;
+  dbClient?: DbClient;
   chatHandler: ChatHandler;
 }
 
-export function buildContainer(config: Config, logger: Logger): AppContainer {
+export async function buildContainer(
+  config: Config,
+  logger: Logger
+): Promise<AppContainer> {
   const providers = extractProviderConfigs(config);
   const hasProviders = Object.keys(providers).length > 0;
 
@@ -148,8 +160,32 @@ export function buildContainer(config: Config, logger: Logger): AppContainer {
 
   const bus = new EventBus<ChatEvent>({ logger });
   const registry = new LocalConnectionRegistry();
-  const convRepo = new InMemoryConversationRepository();
-  const msgRepo = new InMemoryMessageRepository(convRepo);
+
+  const persistence = process.env.PERSISTENCE ?? "in-memory";
+  let convRepo: ConversationRepository;
+  let msgRepo: MessageRepository;
+  let activeWorkspaceResolver: ActiveWorkspaceResolver;
+  let dbClient: DbClient | undefined;
+
+  if (persistence === "drizzle") {
+    const url = process.env.DATABASE_URL ?? "";
+    if (!url) {
+      throw new Error("DATABASE_URL is required when PERSISTENCE=drizzle");
+    }
+    dbClient = createDbClient({ url, poolMax: 10 });
+    convRepo = new DrizzleConversationRepository(dbClient);
+    msgRepo = new DrizzleMessageRepository(dbClient);
+    activeWorkspaceResolver = new DrizzleActiveWorkspaceResolver(dbClient);
+    if (config.NODE_ENV !== "production") {
+      await seedDrizzleDevData(dbClient);
+    }
+  } else {
+    const inMemoryConvRepo = new InMemoryConversationRepository();
+    convRepo = inMemoryConvRepo;
+    msgRepo = new InMemoryMessageRepository(inMemoryConvRepo);
+    activeWorkspaceResolver = new InMemoryActiveWorkspaceResolver();
+  }
+
   const chatHandler = new ChatHandler(bus, chatGateway, logger);
   chatHandler.start();
 
@@ -173,6 +209,8 @@ export function buildContainer(config: Config, logger: Logger): AppContainer {
     registry,
     convRepo,
     msgRepo,
+    activeWorkspaceResolver,
+    ...(dbClient ? { dbClient } : {}),
     chatHandler,
   };
 }

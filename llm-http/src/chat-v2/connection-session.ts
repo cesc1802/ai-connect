@@ -3,6 +3,7 @@ import type { WebSocket } from "ws";
 import type { User, ChatEvent, ChatRequested, ConversationRepository, MessageRepository, ChatMessage } from "@ai-connect/shared";
 import type { EventBus } from "../events/event-bus.js";
 import type { ConnectionRegistry, Connection } from "../transport/connection-registry.js";
+import type { ActiveWorkspaceResolver } from "../workspace/active-workspace-resolver.js";
 import type { Logger } from "../logger.js";
 import type { ChatHandler } from "./chat-handler.js";
 import { clientV2MessageSchema, type ClientV2Message } from "./client-message-schema.js";
@@ -16,6 +17,7 @@ export interface ConnectionSessionDeps {
   registry: ConnectionRegistry;
   convRepo: ConversationRepository;
   msgRepo: MessageRepository;
+  activeWorkspaceResolver: ActiveWorkspaceResolver;
   logger: Logger;
 }
 
@@ -170,8 +172,13 @@ export class ConnectionSession {
         return;
       }
     } else {
+      const ws = await this.deps.activeWorkspaceResolver.getForUser(this.user.id);
+      if (!ws) {
+        this.sendWithBackpressure({ type: "s.error", code: "no_active_workspace", message: "No active workspace" });
+        return;
+      }
       const now = Date.now();
-      const conv = await this.deps.convRepo.create({ userId: this.user.id, createdAt: now, updatedAt: now });
+      const conv = await this.deps.convRepo.create({ workspaceId: ws.id, userId: this.user.id, createdAt: now, updatedAt: now });
       conversationId = conv.id;
       this.sendWithBackpressure({ type: "s.conversation.created", conversation: conv });
     }

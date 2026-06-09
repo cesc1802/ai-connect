@@ -574,8 +574,85 @@ llm-http/src/
 
 ---
 
-## 4. llm-db Package (Planned)
+## 4. @ai-connect/db Package (Postgres + Drizzle)
 
 Database integration layer for conversation storage and persistence.
 
-**Status:** 🔜 Pending implementation
+**Status:** ✅ Stable (chat history scope)
+
+**ORM:** Drizzle 0.36 + drizzle-kit 0.30  
+**Driver:** postgres-js 3.4.5  
+**Database:** PostgreSQL 16+
+
+**Files:**
+
+```
+llm-db/src/
+├── client.ts                      # Factory: createDbClient(url, poolMax) → { db, sql, close() }
+├── env.ts                         # Load DATABASE_URL, DATABASE_POOL_MAX from env
+├── schema/                        # Typed schema definitions
+│   ├── _audit-columns.ts         # Shared audit columns (created_at, updated_at, deleted_at)
+│   ├── workspaces.ts             # Workspace table + type
+│   ├── users.ts                  # User table + system role
+│   ├── user-workspaces.ts        # User-workspace membership
+│   ├── user-role-workspaces.ts   # Workspace-scoped roles
+│   ├── conversations.ts          # Chat conversations (workspace + user scoped)
+│   ├── messages.ts               # Chat messages (conversation scoped)
+│   ├── provider-catalogs.ts      # LLM provider registry
+│   ├── providers.ts              # Provider instances
+│   ├── workspace-providers.ts    # Workspace provider overrides
+│   ├── usage-metrics.ts          # Token usage tracking
+│   └── index.ts                  # Export all schema
+│
+├── cli/
+│   └── migrate.ts                # CLI: Apply pending migrations via drizzle-orm/migrator
+│
+├── drizzle/                       # Generated migrations (forward-only)
+│   ├── 0000_phase02_init.sql     # Phase 2: Initial 10-table schema (workspaces, users, conversations, messages, providers, etc.)
+│   └── 0001_add_user_system_role.sql # Phase 2: Add system role to users table
+│
+├── drizzle.config.ts             # drizzle-kit config (reads compiled dist/schema/index.js)
+├── tsconfig.json                 # TypeScript build config
+└── package.json                  # Scripts: build, db:generate, db:migrate, db:studio
+```
+
+**Key Features:**
+
+- **Typed Client:** `createDbClient()` returns `{ db, sql, close() }` with full TypeScript inference
+- **Schema Exports:** Tables and inferred row types available via `@ai-connect/db/schema`
+- **Migrations:** Forward-only via drizzle-kit; hand-written reversal SQL when needed
+- **CLI:** `pnpm db:migrate` applies pending migrations; `pnpm db:generate` compiles schema
+- **Local Dev:** Docker Postgres 16 service in root `docker-compose.yml`
+
+**Scope (This Phase):**
+
+Persistence implemented for:
+- ✅ Conversations (read/write via `ConversationRepository`)
+- ✅ Messages (read/write via `MessageRepository`)
+- ✅ Workspaces, users, providers schema (defined; CRUD still in-memory)
+
+Explicitly out of scope:
+- ❌ Admin workspace/org management (in-memory only)
+- ❌ Quota enforcement (schema exists; logic not persisted)
+- ❌ Audit log persistence (in-memory only)
+
+**Important:** The db package is built first by `pnpm -r build`. Drizzle-kit reads the compiled `dist/schema/index.js` (not source `.ts`) for migration generation — this is why `pnpm db:generate` runs `tsc` automatically before `drizzle-kit generate`.
+
+**Connection Pattern:**
+
+```typescript
+import { createDbClient } from "@ai-connect/db";
+
+const client = createDbClient({
+  url: process.env.DATABASE_URL!,
+  poolMax: Number(process.env.DATABASE_POOL_MAX ?? 10),
+});
+
+// Use client.db (Drizzle ORM instance)
+const conversations = await client.db.query.conversations.findMany();
+
+// On shutdown
+await client.close();
+```
+
+**See Also:** [Database Migrations](./database-migrations.md) for setup, workflow, and CI/CD integration.

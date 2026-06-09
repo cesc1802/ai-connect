@@ -74,6 +74,7 @@ function makeHarness(opts?: {
     req.user = {
       id: "actor",
       username: "actor",
+      role: "admin",
       org: ORG_ID,
       orgRole: "admin",
       workspace: workspaceRole === null ? null : WS_ID,

@@ -6,7 +6,10 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "dev:http": "pnpm --filter llm-http dev",
-    "lint": "pnpm -r lint"
+    "lint": "pnpm -r lint",
+    "db:generate": "pnpm --filter @ai-connect/db db:generate",
+    "db:migrate": "pnpm --filter @ai-connect/db db:migrate",
+    "db:studio": "pnpm --filter @ai-connect/db db:studio"
   },
   "engines": {
     "node": ">=20"

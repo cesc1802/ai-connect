@@ -1,5 +1,6 @@
 export interface Conversation {
   id: string;
+  workspaceId: string;
   userId: string;
   title?: string;
   createdAt: number;

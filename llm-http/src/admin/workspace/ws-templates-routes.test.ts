@@ -24,6 +24,7 @@ function makeAuthStub(workspaceRole: WorkspaceRole | null): RequestHandler {
     req.user = {
       id: USER,
       username: "alice",
+      role: "member",
       org: ORG,
       orgRole: "member",
       workspace: workspaceRole ? WS : null,

@@ -7,6 +7,7 @@ import {
   createRequireOrgAdmin,
   createRequireWorkspaceAdmin,
 } from "./auth/auth-middleware.js";
+import { createActiveWorkspaceRoutes } from "./workspace/active-workspace-routes.js";
 import { createOrgUsersRoutes } from "./admin/org/users-routes.js";
 import { createOrgTemplatesRouter } from "./admin/org/templates-routes.js";
 import { createOrgProvidersRoutes } from "./admin/org/providers-routes.js";
@@ -44,6 +45,11 @@ export function createApp(container: AppContainer): Express {
   app.use("/health", createHealthRoutes(container));
   app.use("/auth/login", loginLimit);
   app.use("/auth", createAuthRoutes(container));
+  app.use(
+    "/api/me/active-workspace",
+    requireAuth,
+    createActiveWorkspaceRoutes(container.activeWorkspaceResolver),
+  );
   app.use(
     "/admin/org/users",
     requireAuth,

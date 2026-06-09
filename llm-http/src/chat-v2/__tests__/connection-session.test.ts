@@ -28,6 +28,9 @@ function createMockDeps(bus: EventBus<ChatEvent>): ConnectionSessionDeps {
       append: vi.fn(),
       listByConversation: vi.fn(),
     } as unknown as ConnectionSessionDeps["msgRepo"],
+    activeWorkspaceResolver: {
+      getForUser: vi.fn().mockResolvedValue({ id: "ws-test", slug: "dev", name: "Dev" }),
+    } as unknown as ConnectionSessionDeps["activeWorkspaceResolver"],
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as ConnectionSessionDeps["logger"],
   };
 }
@@ -50,7 +53,7 @@ describe("ConnectionSession", () => {
 
   describe("c.chat.send", () => {
     it("creates conversation when conversationId is absent", async () => {
-      const newConv: Conversation = { id: "conv-new", userId: user.id, createdAt: 1000, updatedAt: 1000 };
+      const newConv: Conversation = { id: "conv-new", workspaceId: "ws-test", userId: user.id, createdAt: 1000, updatedAt: 1000 };
       vi.mocked(deps.convRepo.create).mockResolvedValue(newConv);
       vi.mocked(deps.msgRepo.listByConversation).mockResolvedValue([]);
 
@@ -71,7 +74,7 @@ describe("ConnectionSession", () => {
     });
 
     it("sends forbidden error when conversationId owned by other user", async () => {
-      const otherUserConv: Conversation = { id: OTHER_CONV_UUID, userId: "other-user", createdAt: 1000, updatedAt: 1000 };
+      const otherUserConv: Conversation = { id: OTHER_CONV_UUID, workspaceId: "ws-test", userId: "other-user", createdAt: 1000, updatedAt: 1000 };
       vi.mocked(deps.convRepo.get).mockResolvedValue(otherUserConv);
 
       const session = new ConnectionSession(ws, user, deps);
@@ -90,7 +93,7 @@ describe("ConnectionSession", () => {
     });
 
     it("loads history and prepends to messages", async () => {
-      const conv: Conversation = { id: CONV_UUID, userId: user.id, createdAt: 1000, updatedAt: 1000 };
+      const conv: Conversation = { id: CONV_UUID, workspaceId: "ws-test", userId: user.id, createdAt: 1000, updatedAt: 1000 };
       const history: Message[] = [
         { id: "msg-1", conversationId: CONV_UUID, role: "user", content: "prev message", createdAt: 900 },
       ];
@@ -139,7 +142,7 @@ describe("ConnectionSession", () => {
 
   describe("bus event filtering", () => {
     it("sends token to client for owned requestId", async () => {
-      const conv: Conversation = { id: CONV_UUID, userId: user.id, createdAt: 1000, updatedAt: 1000 };
+      const conv: Conversation = { id: CONV_UUID, workspaceId: "ws-test", userId: user.id, createdAt: 1000, updatedAt: 1000 };
       vi.mocked(deps.convRepo.create).mockResolvedValue(conv);
       vi.mocked(deps.msgRepo.listByConversation).mockResolvedValue([]);
 
@@ -190,7 +193,7 @@ describe("ConnectionSession", () => {
 
   describe("c.chat.abort", () => {
     it("aborts owned requestId", async () => {
-      const conv: Conversation = { id: CONV_UUID, userId: user.id, createdAt: 1000, updatedAt: 1000 };
+      const conv: Conversation = { id: CONV_UUID, workspaceId: "ws-test", userId: user.id, createdAt: 1000, updatedAt: 1000 };
       vi.mocked(deps.convRepo.create).mockResolvedValue(conv);
       vi.mocked(deps.msgRepo.listByConversation).mockResolvedValue([]);
 
@@ -271,7 +274,7 @@ describe("ConnectionSession", () => {
 
   describe("socket close", () => {
     it("unregisters and aborts all owned requests on close", async () => {
-      const conv: Conversation = { id: CONV_UUID, userId: user.id, createdAt: 1000, updatedAt: 1000 };
+      const conv: Conversation = { id: CONV_UUID, workspaceId: "ws-test", userId: user.id, createdAt: 1000, updatedAt: 1000 };
       vi.mocked(deps.convRepo.create).mockResolvedValue(conv);
       vi.mocked(deps.msgRepo.listByConversation).mockResolvedValue([]);
 
@@ -295,7 +298,7 @@ describe("ConnectionSession", () => {
     });
 
     it("does not send events after close", async () => {
-      const conv: Conversation = { id: CONV_UUID, userId: user.id, createdAt: 1000, updatedAt: 1000 };
+      const conv: Conversation = { id: CONV_UUID, workspaceId: "ws-test", userId: user.id, createdAt: 1000, updatedAt: 1000 };
       vi.mocked(deps.convRepo.create).mockResolvedValue(conv);
       vi.mocked(deps.msgRepo.listByConversation).mockResolvedValue([]);
 

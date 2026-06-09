@@ -6,10 +6,7 @@ const demoUserRecordSchema = z.object({
   id: z.string(),
   username: z.string(),
   passwordHash: z.string(),
-  org: z.string().default("demo-org"),
-  orgRole: z.enum(["admin", "member"]).default("member"),
-  workspace: z.string().nullable().optional(),
-  workspaceRole: z.enum(["owner", "admin", "member", "viewer"]).nullable().optional(),
+  role: z.enum(["admin", "member"]).default("member"),
 });
 
 const demoUsersSchema = z

@@ -29,6 +29,7 @@ function makeAuthStub(
     req.user = {
       id: USER,
       username: "alice",
+      role: orgRole,
       org: ORG,
       orgRole,
       workspace: workspaceRole ? WS : null,

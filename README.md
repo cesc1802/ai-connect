@@ -561,7 +561,7 @@ This project is a pnpm monorepo with the following packages:
 | **[llm-gateway](./llm-gateway)** | Core LLM provider abstraction with resilience patterns | ✅ Stable |
 | **[@ai-connect/shared](./llm-shared)** | Shared types (WebSocket protocol, auth) | ✅ Stable |
 | **[@ai-connect/http](./llm-http)** | HTTP/WebSocket server with JWT auth | ✅ Stable |
-| **llm-db** | Database persistence layer | 🔜 Planned |
+| **[@ai-connect/db](./llm-db)** | Postgres + Drizzle persistence layer | ✅ Stable (chat history scope) |
 
 ### Package Dependencies
 

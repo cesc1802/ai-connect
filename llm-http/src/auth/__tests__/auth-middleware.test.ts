@@ -11,10 +11,6 @@ function basePayload() {
   return {
     sub: "user-123",
     username: "testuser",
-    org: "org-1",
-    orgRole: "member" as const,
-    workspace: null as string | null,
-    workspaceRole: null as null,
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + 3600,
   };
@@ -30,6 +26,14 @@ describe("Auth Middleware", () => {
   beforeEach(() => {
     mockContainer = {
       jwtService: { verify: vi.fn() },
+      userRepository: {
+        findByUsername: vi.fn().mockResolvedValue({
+          id: "user-123",
+          username: "testuser",
+          passwordHash: "x",
+          role: "member",
+        }),
+      },
     } as unknown as AppContainer;
 
     mockRequest = { headers: {} };
@@ -75,46 +79,78 @@ describe("Auth Middleware", () => {
   });
 
   describe("valid token", () => {
-    it("allows request with valid token", () => {
+    it("allows request with valid token", async () => {
       mockRequest.headers = { authorization: "Bearer validtoken" };
       vi.mocked(mockContainer.jwtService.verify).mockReturnValue(basePayload());
-      requireAuth(mockRequest as Request, mockResponse as Response, mockNext);
+      await requireAuth(mockRequest as Request, mockResponse as Response, mockNext);
       expect(mockNext).toHaveBeenCalled();
       expect(mockResponse.status).not.toHaveBeenCalled();
     });
 
-    it("attaches user with all role claims to request", () => {
+    it("attaches identity plus system role to request", async () => {
       mockRequest.headers = { authorization: "Bearer t" };
       vi.mocked(mockContainer.jwtService.verify).mockReturnValue({
         ...basePayload(),
         sub: "user-456",
         username: "alice",
-        org: "org-7",
-        orgRole: "admin",
-        workspace: "ws-9",
-        workspaceRole: "owner",
+      });
+      vi.mocked(mockContainer.userRepository.findByUsername).mockResolvedValue({
+        id: "user-456",
+        username: "alice",
+        passwordHash: "x",
+        role: "admin",
       });
 
-      requireAuth(mockRequest as Request, mockResponse as Response, mockNext);
+      await requireAuth(mockRequest as Request, mockResponse as Response, mockNext);
 
+      // System admin mirrors onto both orgRole and workspaceRole so the
+      // not-yet-decommissioned admin routes stay reachable.
       expect(mockRequest.user).toEqual({
         id: "user-456",
         username: "alice",
-        org: "org-7",
+        role: "admin",
+        org: "default",
         orgRole: "admin",
-        workspace: "ws-9",
-        workspaceRole: "owner",
+        workspace: null,
+        workspaceRole: "admin",
       });
+    });
+
+    it("maps a system member to null org/workspace roles", async () => {
+      mockRequest.headers = { authorization: "Bearer t" };
+      vi.mocked(mockContainer.jwtService.verify).mockReturnValue(basePayload());
+      vi.mocked(mockContainer.userRepository.findByUsername).mockResolvedValue({
+        id: "user-123",
+        username: "testuser",
+        passwordHash: "x",
+        role: "member",
+      });
+
+      await requireAuth(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockRequest.user?.orgRole).toBe("member");
+      expect(mockRequest.user?.workspaceRole).toBeNull();
+    });
+
+    it("returns 401 when user record no longer exists", async () => {
+      mockRequest.headers = { authorization: "Bearer t" };
+      vi.mocked(mockContainer.jwtService.verify).mockReturnValue(basePayload());
+      vi.mocked(mockContainer.userRepository.findByUsername).mockResolvedValue(null);
+
+      await requireAuth(mockRequest as Request, mockResponse as Response, mockNext);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(401);
+      expect(mockNext).not.toHaveBeenCalled();
     });
   });
 
   describe("invalid token", () => {
-    it("returns 401 when verify throws", () => {
+    it("returns 401 when verify throws", async () => {
       mockRequest.headers = { authorization: "Bearer bad" };
       vi.mocked(mockContainer.jwtService.verify).mockImplementation(() => {
         throw new Error("invalid");
       });
-      requireAuth(mockRequest as Request, mockResponse as Response, mockNext);
+      await requireAuth(mockRequest as Request, mockResponse as Response, mockNext);
       expect(mockResponse.status).toHaveBeenCalledWith(401);
       expect(mockResponse.json).toHaveBeenCalledWith({
         code: "invalid_token",
@@ -152,6 +188,7 @@ describe("createRequireOrgAdmin", () => {
     req.user = {
       id: "u1",
       username: "u",
+      role: "member",
       org: "o",
       orgRole: "member",
       workspace: null,
@@ -166,6 +203,7 @@ describe("createRequireOrgAdmin", () => {
     req.user = {
       id: "u1",
       username: "u",
+      role: "member",
       org: "o",
       orgRole: "admin",
       workspace: null,
@@ -203,6 +241,7 @@ describe("createRequireWorkspaceAdmin", () => {
     req.user = {
       id: "u1",
       username: "u",
+      role: "member",
       org: "o",
       orgRole: "member",
       workspace: null,
@@ -216,6 +255,7 @@ describe("createRequireWorkspaceAdmin", () => {
     req.user = {
       id: "u1",
       username: "u",
+      role: "member",
       org: "o",
       orgRole: "member",
       workspace: "w",
@@ -229,6 +269,7 @@ describe("createRequireWorkspaceAdmin", () => {
     req.user = {
       id: "u1",
       username: "u",
+      role: "member",
       org: "o",
       orgRole: "member",
       workspace: "w",
@@ -242,6 +283,7 @@ describe("createRequireWorkspaceAdmin", () => {
     req.user = {
       id: "u1",
       username: "u",
+      role: "member",
       org: "o",
       orgRole: "member",
       workspace: "w",
@@ -255,6 +297,7 @@ describe("createRequireWorkspaceAdmin", () => {
     req.user = {
       id: "u1",
       username: "u",
+      role: "member",
       org: "o",
       orgRole: "member",
       workspace: "w",

@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ai_connect
+          POSTGRES_PASSWORD: ai_connect_ci
+          POSTGRES_DB: ai_connect
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ai_connect"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://ai_connect:ai_connect_ci@localhost:5432/ai_connect
+      PERSISTENCE: drizzle
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Build first: drizzle-kit reads the compiled schema (dist) for drift check,
+      # and the rest of the suite needs the workspace packages built.
+      - run: pnpm -r build
+
+      # Fail-fast on migration-history corruption/collisions before touching the DB.
+      - run: pnpm --filter @ai-connect/db exec drizzle-kit check
+
+      - run: pnpm db:migrate
+
+      - run: pnpm -r test

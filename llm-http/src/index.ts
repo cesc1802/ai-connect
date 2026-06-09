@@ -8,7 +8,7 @@ import { attachChatV2Server, type V2WebSocketHandle } from "./chat-v2/index.js";
 async function main() {
   const config = loadConfig();
   const logger = createLogger(config);
-  const container = buildContainer(config, logger);
+  const container = await buildContainer(config, logger);
   const app = createApp(container);
   const server = http.createServer(app);
 
@@ -19,6 +19,7 @@ async function main() {
     registry: container.registry,
     convRepo: container.convRepo,
     msgRepo: container.msgRepo,
+    activeWorkspaceResolver: container.activeWorkspaceResolver,
     logger: container.logger,
   });
 
@@ -43,6 +44,7 @@ function createShutdownHandler(
     await container.chatHandler.dispose();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await container.chatGateway.dispose();
+    if (container.dbClient) await container.dbClient.close();
     process.exit(0);
   };
 }

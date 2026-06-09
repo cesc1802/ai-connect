@@ -12,6 +12,7 @@ describe("InMemoryMessageRepository", () => {
     msgRepo = new InMemoryMessageRepository(convRepo);
 
     const conv = await convRepo.create({
+      workspaceId: "ws-test",
       userId: "user-1",
       createdAt: 1000,
       updatedAt: 1000,
@@ -156,6 +157,7 @@ describe("InMemoryMessageRepository", () => {
   describe("conversation isolation", () => {
     it("messages belong only to their conversation", async () => {
       const conv2 = await convRepo.create({
+        workspaceId: "ws-test",
         userId: "user-1",
         createdAt: 1000,
         updatedAt: 1000,

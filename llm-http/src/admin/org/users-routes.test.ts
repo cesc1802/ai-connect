@@ -82,6 +82,7 @@ function makeHarness(opts?: {
     req.user = {
       id: user.id,
       username: "actor",
+      role: user.orgRole,
       org: user.org,
       orgRole: user.orgRole,
       workspace: null,
