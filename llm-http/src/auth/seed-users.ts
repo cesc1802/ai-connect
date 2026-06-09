@@ -5,7 +5,6 @@ import {
   userRoleWorkspaces,
   type DbClient,
 } from "@ai-connect/db";
-import type { UserRecord } from "./user-repository.js";
 import {
   DEV_WORKSPACE_ID,
   DEV_WORKSPACE_SLUG,
@@ -13,14 +12,6 @@ import {
   DEV_USER_ID,
   DEV_USERNAME,
 } from "./dev-seed-constants.js";
-
-export function seedUsers(seed: UserRecord[]): Map<string, UserRecord> {
-  const map = new Map<string, UserRecord>();
-  for (const user of seed) {
-    map.set(user.username, user);
-  }
-  return map;
-}
 
 /**
  * Seeds the local dev identity (workspace + user + memberships) so the dev-auth

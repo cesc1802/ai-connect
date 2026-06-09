@@ -7,10 +7,10 @@ import type { ChatGatewayPort } from "./chat-v2/chat-gateway-port.js";
 import { LlmGatewayAdapter } from "./chat-v2/llm-gateway-adapter.js";
 import { NullGatewayAdapter } from "./chat-v2/null-gateway-adapter.js";
 import type { UserRepository } from "./auth/user-repository.js";
-import { InMemoryUserRepository } from "./auth/in-memory-user-repository.js";
-import { seedUsers } from "./auth/seed-users.js";
+import { DrizzleUserRepository } from "./auth/drizzle-user-repository.js";
 import { CredentialsVerifier } from "./auth/credentials-verifier.js";
 import { JwtService } from "./auth/jwt-service.js";
+import { AuthService } from "./auth/auth-service.js";
 import { StdoutAuditEmitter } from "./admin/audit-emitter-stdout.js";
 import {
   InMemoryOrgUsersRepository,
@@ -67,6 +67,7 @@ export interface AppContainer {
   chatGateway: ChatGatewayPort;
   userRepository: UserRepository;
   credentialsVerifier: CredentialsVerifier;
+  authService: AuthService;
   jwtService: JwtService;
   auditEmitter: AuditEmitter;
   orgUsersService: OrgUsersService;
@@ -82,7 +83,7 @@ export interface AppContainer {
   convRepo: ConversationRepository;
   msgRepo: MessageRepository;
   activeWorkspaceResolver: ActiveWorkspaceResolver;
-  dbClient?: DbClient;
+  dbClient: DbClient;
   chatHandler: ChatHandler;
 }
 
@@ -107,9 +108,24 @@ export async function buildContainer(
     chatGateway = new NullGatewayAdapter();
   }
 
-  const userRepository = new InMemoryUserRepository(seedUsers(config.DEMO_USERS));
-  const credentialsVerifier = new CredentialsVerifier(userRepository);
   const jwtService = new JwtService(config.JWT_SECRET, config.JWT_EXPIRES_IN);
+
+  // The user repository is always Postgres-backed, so a DB connection is required
+  // to boot regardless of PERSISTENCE (which only selects conversation/message repos).
+  const databaseUrl = process.env.DATABASE_URL ?? "";
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required");
+  }
+  const dbClient = createDbClient({ url: databaseUrl, poolMax: 10 });
+
+  const userRepository = new DrizzleUserRepository(dbClient);
+  const credentialsVerifier = new CredentialsVerifier(userRepository);
+  const authService = new AuthService(
+    credentialsVerifier,
+    jwtService,
+    userRepository,
+    config.JWT_EXPIRES_IN
+  );
   const auditEmitter = new StdoutAuditEmitter(logger);
   const orgUsersRepo = new InMemoryOrgUsersRepository(seedOrgUsers());
   const orgUsersService = new DefaultOrgUsersService(
@@ -165,14 +181,8 @@ export async function buildContainer(
   let convRepo: ConversationRepository;
   let msgRepo: MessageRepository;
   let activeWorkspaceResolver: ActiveWorkspaceResolver;
-  let dbClient: DbClient | undefined;
 
   if (persistence === "drizzle") {
-    const url = process.env.DATABASE_URL ?? "";
-    if (!url) {
-      throw new Error("DATABASE_URL is required when PERSISTENCE=drizzle");
-    }
-    dbClient = createDbClient({ url, poolMax: 10 });
     convRepo = new DrizzleConversationRepository(dbClient);
     msgRepo = new DrizzleMessageRepository(dbClient);
     activeWorkspaceResolver = new DrizzleActiveWorkspaceResolver(dbClient);
@@ -195,6 +205,7 @@ export async function buildContainer(
     chatGateway,
     userRepository,
     credentialsVerifier,
+    authService,
     jwtService,
     auditEmitter,
     orgUsersService,
@@ -210,7 +221,7 @@ export async function buildContainer(
     convRepo,
     msgRepo,
     activeWorkspaceResolver,
-    ...(dbClient ? { dbClient } : {}),
+    dbClient,
     chatHandler,
   };
 }

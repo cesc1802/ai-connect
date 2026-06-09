@@ -32,18 +32,21 @@ export function createApp(container: AppContainer): Express {
   app.use(express.json({ limit: "1mb" }));
   app.use(createRedactLogMiddleware());
 
-  const loginLimit = createRateLimit({
+  // Shared across the unauthenticated auth endpoints (login + register) since
+  // both run bcrypt + a DB hit per call and are abuse targets.
+  const authLimit = createRateLimit({
     windowMs: config.RATE_LIMIT_LOGIN_WINDOW_MS,
     max: config.RATE_LIMIT_LOGIN_MAX,
     keyBy: "ip",
     code: "rate_limited",
-    message: "Too many login attempts",
+    message: "Too many attempts, please try again later",
   });
 
   const requireAuth = createRequireAuth(container);
 
   app.use("/health", createHealthRoutes(container));
-  app.use("/auth/login", loginLimit);
+  app.use("/auth/login", authLimit);
+  app.use("/auth/register", authLimit);
   app.use("/auth", createAuthRoutes(container));
   app.use(
     "/api/me/active-workspace",

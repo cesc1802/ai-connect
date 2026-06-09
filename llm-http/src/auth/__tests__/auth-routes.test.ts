@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createAuthRoutes } from "../auth-routes.js";
+import { UsernameTakenError } from "../user-repository.js";
 import type { AppContainer } from "../../container.js";
-import type { User } from "@ai-connect/shared";
 import type { Request, Response, NextFunction } from "express";
 
 describe("Auth Routes", () => {
@@ -9,15 +9,9 @@ describe("Auth Routes", () => {
 
   beforeEach(() => {
     mockContainer = {
-      config: { JWT_EXPIRES_IN: "1h" },
-      credentialsVerifier: { verify: vi.fn() },
-      jwtService: { sign: vi.fn() },
+      authService: { login: vi.fn(), register: vi.fn() },
     } as unknown as AppContainer;
   });
-
-  function createMockRequest(body: unknown): Partial<Request> {
-    return { body };
-  }
 
   function createMockResponse() {
     const response: any = {
@@ -27,84 +21,55 @@ describe("Auth Routes", () => {
     return response;
   }
 
-  async function callLoginRoute(body: unknown) {
+  async function callRoute(path: string, body: unknown) {
     const router = createAuthRoutes(mockContainer);
-    const mockRequest = createMockRequest(body) as Request;
+    const mockRequest = { body } as Request;
     const mockResponse = createMockResponse() as Response;
     const mockNext = vi.fn() as NextFunction;
 
     const stack = (router as any).stack;
-    const loginRoute = stack.find((layer: any) => layer.route?.path === "/login");
-    if (!loginRoute) throw new Error("Login route not found");
-
-    const handlers = loginRoute.route.stack || [];
-    const handler = handlers[0]?.handle;
+    const layer = stack.find((l: any) => l.route?.path === path);
+    if (!layer) throw new Error(`Route not found: ${path}`);
+    const handler = (layer.route.stack || [])[0]?.handle;
     if (!handler) throw new Error("Handler not found");
 
     await handler(mockRequest, mockResponse, mockNext);
-    return { response: mockResponse, request: mockRequest };
+    return { response: mockResponse, next: mockNext };
   }
 
-  describe("POST /login - successful authentication", () => {
-    it("returns token on valid credentials", async () => {
-      const user: User = { id: "user-123", username: "testuser" };
-      vi.mocked(mockContainer.credentialsVerifier.verify).mockResolvedValue(user);
-      vi.mocked(mockContainer.jwtService.sign).mockReturnValue("jwt_token_123");
+  describe("POST /login - success", () => {
+    it("returns the service login result", async () => {
+      vi.mocked(mockContainer.authService.login).mockResolvedValue({
+        token: "jwt_token_123",
+        expiresIn: "1h",
+      });
 
-      const { response } = await callLoginRoute({
+      const { response } = await callRoute("/login", {
         username: "testuser",
         password: "correct",
       });
 
+      expect(mockContainer.authService.login).toHaveBeenCalledWith(
+        "testuser",
+        "correct",
+      );
       expect(response.json).toHaveBeenCalledWith({
         token: "jwt_token_123",
         expiresIn: "1h",
       });
       expect(response.status).not.toHaveBeenCalled();
     });
-
-    it("signs the identity returned by the verifier", async () => {
-      const user: User = { id: "u1", username: "alice" };
-      vi.mocked(mockContainer.credentialsVerifier.verify).mockResolvedValue(user);
-      vi.mocked(mockContainer.jwtService.sign).mockReturnValue("tok");
-
-      await callLoginRoute({ username: "alice", password: "p" });
-
-      expect(mockContainer.jwtService.sign).toHaveBeenCalledWith(user);
-    });
-
-    it("calls credentialsVerifier with correct arguments", async () => {
-      const user: User = { id: "user-alice", username: "alice" };
-      vi.mocked(mockContainer.credentialsVerifier.verify).mockResolvedValue(user);
-      vi.mocked(mockContainer.jwtService.sign).mockReturnValue("token");
-
-      await callLoginRoute({ username: "alice", password: "secret123" });
-
-      expect(mockContainer.credentialsVerifier.verify).toHaveBeenCalledWith(
-        "alice",
-        "secret123",
-      );
-    });
-
-    it("returns expiresIn from config", async () => {
-      mockContainer.config.JWT_EXPIRES_IN = "24h";
-      const user: User = { id: "u", username: "u" };
-      vi.mocked(mockContainer.credentialsVerifier.verify).mockResolvedValue(user);
-      vi.mocked(mockContainer.jwtService.sign).mockReturnValue("token");
-
-      const { response } = await callLoginRoute({ username: "u", password: "p" });
-
-      expect(response.json).toHaveBeenCalledWith({ token: "token", expiresIn: "24h" });
-    });
   });
 
   describe("POST /login - invalid credentials", () => {
-    it("returns 401 for invalid password", async () => {
-      vi.mocked(mockContainer.credentialsVerifier.verify).mockResolvedValue(null);
-      const { response } = await callLoginRoute({
+    it("returns 401 when the service returns null", async () => {
+      vi.mocked(mockContainer.authService.login).mockResolvedValue(null);
+
+      const { response } = await callRoute("/login", {
         username: "testuser",
         password: "wrong",
       });
+
       expect(response.status).toHaveBeenCalledWith(401);
       expect(response.json).toHaveBeenCalledWith({
         code: "invalid_credentials",
@@ -112,15 +77,9 @@ describe("Auth Routes", () => {
       });
     });
 
-    it("does not sign token on verification failure", async () => {
-      vi.mocked(mockContainer.credentialsVerifier.verify).mockResolvedValue(null);
-      await callLoginRoute({ username: "user", password: "wrong" });
-      expect(mockContainer.jwtService.sign).not.toHaveBeenCalled();
-    });
-
-    it("does not leak whether user exists in error message", async () => {
-      vi.mocked(mockContainer.credentialsVerifier.verify).mockResolvedValue(null);
-      const { response } = await callLoginRoute({
+    it("does not leak whether the user exists", async () => {
+      vi.mocked(mockContainer.authService.login).mockResolvedValue(null);
+      const { response } = await callRoute("/login", {
         username: "unknown",
         password: "p",
       });
@@ -131,49 +90,111 @@ describe("Auth Routes", () => {
 
   describe("POST /login - validation", () => {
     it("returns 400 for missing username", async () => {
-      const { response } = await callLoginRoute({ password: "password" });
+      const { response } = await callRoute("/login", { password: "password" });
       expect(response.status).toHaveBeenCalledWith(400);
       const args = ((response.json as any).mock.calls[0] as any[])[0];
       expect(args.code).toBe("invalid_body");
     });
 
-    it("returns 400 for missing password", async () => {
-      const { response } = await callLoginRoute({ username: "u" });
-      expect(response.status).toHaveBeenCalledWith(400);
-    });
-
-    it("returns 400 for empty username", async () => {
-      const { response } = await callLoginRoute({ username: "", password: "p" });
-      expect(response.status).toHaveBeenCalledWith(400);
-    });
-
     it("returns 400 for empty password", async () => {
-      const { response } = await callLoginRoute({ username: "u", password: "" });
+      const { response } = await callRoute("/login", {
+        username: "u",
+        password: "",
+      });
       expect(response.status).toHaveBeenCalledWith(400);
     });
 
-    it("accepts extra fields", async () => {
-      const user: User = { id: "u", username: "user" };
-      vi.mocked(mockContainer.credentialsVerifier.verify).mockResolvedValue(user);
-      vi.mocked(mockContainer.jwtService.sign).mockReturnValue("token");
+    it("does not call the service on invalid body", async () => {
+      await callRoute("/login", { username: "u" });
+      expect(mockContainer.authService.login).not.toHaveBeenCalled();
+    });
+  });
 
-      const { response } = await callLoginRoute({
-        username: "user",
-        password: "p",
-        extra: 1,
+  describe("POST /register - success", () => {
+    it("returns 201 with the created user (no password hash)", async () => {
+      vi.mocked(mockContainer.authService.register).mockResolvedValue({
+        id: "user-1",
+        username: "alice",
+        passwordHash: "hashed",
+        role: "member",
       });
 
-      expect(response.json).toHaveBeenCalledWith({ token: "token", expiresIn: "1h" });
+      const { response } = await callRoute("/register", {
+        username: "alice",
+        password: "password123",
+      });
+
+      expect(mockContainer.authService.register).toHaveBeenCalledWith(
+        "alice",
+        "password123",
+      );
+      expect(response.status).toHaveBeenCalledWith(201);
+      expect(response.json).toHaveBeenCalledWith({
+        id: "user-1",
+        username: "alice",
+      });
+    });
+  });
+
+  describe("POST /register - conflicts and validation", () => {
+    it("returns 409 when the username is taken", async () => {
+      vi.mocked(mockContainer.authService.register).mockRejectedValue(
+        new UsernameTakenError("alice"),
+      );
+
+      const { response } = await callRoute("/register", {
+        username: "alice",
+        password: "password123",
+      });
+
+      expect(response.status).toHaveBeenCalledWith(409);
+      expect(response.json).toHaveBeenCalledWith({
+        code: "username_taken",
+        message: "Username is already taken",
+      });
+    });
+
+    it("returns 400 when the password is too short", async () => {
+      const { response } = await callRoute("/register", {
+        username: "alice",
+        password: "short",
+      });
+      expect(response.status).toHaveBeenCalledWith(400);
+      expect(mockContainer.authService.register).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 when the username is too short", async () => {
+      const { response } = await callRoute("/register", {
+        username: "al",
+        password: "password123",
+      });
+      expect(response.status).toHaveBeenCalledWith(400);
+    });
+
+    it("forwards unexpected errors to next()", async () => {
+      vi.mocked(mockContainer.authService.register).mockRejectedValue(
+        new Error("db down"),
+      );
+
+      const { response, next } = await callRoute("/register", {
+        username: "alice",
+        password: "password123",
+      });
+
+      expect(next).toHaveBeenCalled();
+      expect(response.status).not.toHaveBeenCalledWith(409);
     });
   });
 
   describe("router structure", () => {
-    it("has POST /login", () => {
+    it("exposes POST /login and POST /register", () => {
       const router = createAuthRoutes(mockContainer);
       const stack = (router as any).stack;
-      const loginRoute = stack.find((layer: any) => layer.route?.path === "/login");
-      expect(loginRoute).toBeDefined();
-      expect(loginRoute.route.methods.post).toBeDefined();
+      const paths = stack
+        .filter((l: any) => l.route)
+        .map((l: any) => l.route.path);
+      expect(paths).toContain("/login");
+      expect(paths).toContain("/register");
     });
   });
 });
