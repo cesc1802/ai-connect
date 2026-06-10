@@ -502,6 +502,16 @@ llm-http/src/
 │   ├── server-message-types.ts  # TypeScript defs (s.chat.started, s.chat.token, etc.)
 │   └── index.ts                 # Public exports
 │
+├── workspace/                    # Workspace CRUD (paging, admin)
+│   ├── workspace-repository.ts  # Repository interface (getById, isMember, list, create, update, softDelete)
+│   ├── drizzle-workspace-repository.ts  # Postgres implementation (Drizzle ORM)
+│   ├── workspace-routes.ts      # GET/POST /workspaces (paging + admin create)
+│   ├── workspace-by-id-routes.ts # GET/PATCH/DELETE /workspaces/:id (single)
+│   ├── active-workspace-resolver.ts # Interface for active workspace resolution
+│   ├── drizzle-active-workspace-resolver.ts # Postgres-backed resolver
+│   ├── active-workspace-routes.ts # GET /api/me/active-workspace
+│   └── __tests__/               # Repository + routes tests
+│
 ├── events/                       # Event system (Phase 1)
 │   ├── event-bus.ts             # Pub/sub event broker
 │   └── __tests__/               # Event bus tests
@@ -527,6 +537,7 @@ llm-http/src/
 │
 ├── shared/                       # Shared utilities
 │   ├── rate-limit.ts            # Rate limiting factory
+│   ├── cors-middleware.ts       # CORS configuration
 │   └── error-handler.ts         # Express error handler
 │
 ├── app.ts                        # Express app setup
@@ -566,11 +577,22 @@ llm-http/src/
 - `s.error`: Protocol error (code, message)
 - `s.pong`: Pong response
 
+**Workspace Management:**
+- Role-aware list endpoint (admin: all; member: own workspaces only)
+- Paginated: `GET /workspaces?page=1&limit=20` (default limit 20, max 100)
+- Create endpoint (admin-only): `POST /workspaces` with auto-slug derivation from name
+- Get single: `GET /workspaces/:id` (admin: any; member: returns 404 for non-membership to avoid existence leak)
+- Update: `PATCH /workspaces/:id` (admin-only, partial: name and/or slug)
+- Delete: `DELETE /workspaces/:id` (admin-only, soft-delete via deletedAt)
+- Active workspace resolver: `GET /api/me/active-workspace` (user's first workspace or error)
+- Repository pattern: interface + Postgres (Drizzle ORM) implementation
+- Comprehensive tests for role-based access control and paging
+
 **Testing:**
 - 400+ tests passing (includes event-driven tests)
 - 90%+ overall coverage
 - No vi.mock() - uses interface-based fakes
-- Test containers for all layers (auth, chat, events, transport)
+- Test containers for all layers (auth, chat, workspace, events, transport)
 
 ---
 

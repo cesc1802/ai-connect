@@ -1,8 +1,9 @@
 import { Icon } from "@/lib/icons";
-import type { Workspace } from "@/lib/mock-data";
 
+// Structural prop: anything with a hue renders, so both mock Workspace
+// objects and API-backed summaries (hue derived client-side) work.
 type Props = {
-  ws: Workspace;
+  ws: { hue: number };
   size?: number;
 };
 

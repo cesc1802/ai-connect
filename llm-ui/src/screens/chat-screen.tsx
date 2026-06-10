@@ -3,7 +3,7 @@ import { Icon } from "@/lib/icons";
 import { PROVIDERS, CONVERSATIONS } from "@/lib/mock-data";
 import { useChatStore } from "@/lib/chat-context";
 import { useChatSocket } from "@/hooks/use-chat-socket";
-import { getDevToken, getWsUrl } from "@/lib/auth-token";
+import { getToken, getWsUrl } from "@/lib/auth-token";
 import { MessageList } from "@/components/chat/message-list";
 import { Composer } from "@/components/chat/composer";
 import { StreamingControls } from "@/components/chat/streaming-controls";
@@ -15,7 +15,7 @@ export function ChatScreen() {
   const [model, setModel] = useState(ALL_MODELS[0] ?? "");
   const [selectedConvoId, setSelectedConvoId] = useState<string | null>(null);
 
-  const token = useMemo(() => getDevToken(), []);
+  const token = useMemo(() => getToken(), []);
   const wsUrl = useMemo(() => getWsUrl(), []);
   const { send, abort, socketState } = useChatSocket({ url: wsUrl, token });
   const { state } = useChatStore();

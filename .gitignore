@@ -94,3 +94,6 @@ worktrees/
 
 # Generated OpenCode backup from scripts/generate-opencode.py --force
 .opencode.backup/
+
+# Auto Claude data directory
+.auto-claude/

@@ -253,6 +253,69 @@ curl -X POST "$BASE/workspaces" \
 | 403 | `role_required` | Caller is not a system admin |
 | 409 | `slug_taken` | Workspace slug already exists |
 
+#### `GET /workspaces/:id`
+
+Fetch a single workspace. **Auth required.** Role-aware:
+- System `admin` → can view any non-deleted workspace.
+- System `member` → can only view workspaces they belong to (returns 404 for non-membership to prevent existence leak).
+
+```bash
+curl "$BASE/workspaces/550e8400-e29b-41d4-a716-446655440000" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**200**
+```json
+{ "id": "<uuid>", "slug": "team-rocket", "name": "Team Rocket", "createdAt": "2026-06-10T03:00:00.000Z" }
+```
+
+| Status | Code | When |
+|--------|------|------|
+| 401 | `missing_token` / `invalid_token` | Missing or invalid Bearer token |
+| 404 | `workspace_not_found` | Workspace does not exist, or caller is member and not in workspace |
+
+#### `PATCH /workspaces/:id`
+
+Update a workspace. **Auth required + system `admin` role.** Body: `name` (optional, 1–100 chars); `slug` (optional, `^[a-z0-9]+(-[a-z0-9]+)*$`, max 50). At least one field is required.
+
+```bash
+curl -X PATCH "$BASE/workspaces/550e8400-e29b-41d4-a716-446655440000" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Team Rocket v2"}'
+```
+
+**200**
+```json
+{ "id": "<uuid>", "slug": "team-rocket", "name": "Team Rocket v2", "createdAt": "2026-06-10T03:00:00.000Z" }
+```
+
+| Status | Code | When |
+|--------|------|------|
+| 400 | `invalid_body` | Body fails validation or no fields provided |
+| 401 | `missing_token` / `invalid_token` | Missing or invalid Bearer token |
+| 403 | `role_required` | Caller is not a system admin |
+| 404 | `workspace_not_found` | Workspace does not exist |
+| 409 | `slug_taken` | New slug already exists (when provided) |
+
+#### `DELETE /workspaces/:id`
+
+Soft-delete a workspace. **Auth required + system `admin` role.** Deletion is not reversible via API; only admins can delete. Attempting to delete an already-deleted workspace returns 404.
+
+```bash
+curl -X DELETE "$BASE/workspaces/550e8400-e29b-41d4-a716-446655440000" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**204**  
+No response body.
+
+| Status | Code | When |
+|--------|------|------|
+| 401 | `missing_token` / `invalid_token` | Missing or invalid Bearer token |
+| 403 | `role_required` | Caller is not a system admin |
+| 404 | `workspace_not_found` | Workspace does not exist or already deleted |
+
 ---
 
 ### Org Admin — Users
@@ -797,6 +860,11 @@ See `README.md` for the full table. Key ones:
 | POST | `/auth/login` | none (rate limited) |
 | POST | `/auth/register` | none (rate limited) |
 | GET | `/api/me/active-workspace` | user |
+| GET | `/workspaces` | user |
+| POST | `/workspaces` | system admin |
+| GET | `/workspaces/:id` | user (role-aware) |
+| PATCH | `/workspaces/:id` | system admin |
+| DELETE | `/workspaces/:id` | system admin |
 | GET | `/admin/org/users` | org admin |
 | POST | `/admin/org/users/invite` | org admin |
 | POST | `/admin/org/users/:id/disable` | org admin |

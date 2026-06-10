@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { createWorkspaceByIdRoutes } from "./workspace-by-id-routes.js";
 import {
   SlugTakenError,
   type WorkspaceRepository,
@@ -117,6 +118,8 @@ export function createWorkspaceRoutes(repo: WorkspaceRepository): Router {
       next(err);
     }
   });
+
+  router.use(createWorkspaceByIdRoutes(repo));
 
   return router;
 }

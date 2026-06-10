@@ -158,4 +158,20 @@
 
 @layer utilities {
   .font-mono { font-family: var(--font-mono); }
+
+  /* Warm dotted texture for the login brand panel — flat token, no gradient-as-decoration. */
+  .brand-grid {
+    background-image: radial-gradient(oklch(1 0 0 / 0.07) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  @keyframes pulse-ring {
+    0%   { box-shadow: 0 0 0 0 var(--success); }
+    70%  { box-shadow: 0 0 0 6px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+  .live-dot { animation: pulse-ring 2.4s ease-out infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .live-dot { animation: none; }
+  }
 }

@@ -141,4 +141,72 @@ runIf("DrizzleWorkspaceRepository", () => {
       repo.create({ slug: `${SLUG_PREFIX}dup`, name: "Second" })
     ).rejects.toBeInstanceOf(SlugTakenError);
   });
+
+  it("getById resolves a live workspace and misses a soft-deleted one", async () => {
+    const [id] = await seedWorkspaces(["by-id"]);
+
+    const found = await repo.getById(id!);
+    expect(found?.slug).toBe(`${SLUG_PREFIX}by-id`);
+
+    await repo.softDelete(id!);
+    expect(await repo.getById(id!)).toBeNull();
+  });
+
+  it("isMember reflects the membership join table", async () => {
+    const [mineId, foreignId] = await seedWorkspaces(["memb", "foreign"]);
+    await client.db
+      .insert(userWorkspaces)
+      .values({ userId: TEST_USER_ID, workspaceId: mineId! });
+
+    expect(await repo.isMember(TEST_USER_ID, mineId!)).toBe(true);
+    expect(await repo.isMember(TEST_USER_ID, foreignId!)).toBe(false);
+  });
+
+  it("update renames and reslug-s, bumping updatedAt", async () => {
+    const [id] = await seedWorkspaces(["upd"]);
+
+    const updated = await repo.update(id!, {
+      name: "Renamed",
+      slug: `${SLUG_PREFIX}upd-2`,
+    });
+
+    expect(updated?.name).toBe("Renamed");
+    expect(updated?.slug).toBe(`${SLUG_PREFIX}upd-2`);
+
+    const [row] = await client.db
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.id, id!));
+    expect(row?.updatedAt.getTime()).toBeGreaterThanOrEqual(
+      row!.createdAt.getTime()
+    );
+  });
+
+  it("update throws SlugTakenError when the slug collides", async () => {
+    const [, secondId] = await seedWorkspaces(["taken", "loser"]);
+
+    await expect(
+      repo.update(secondId!, { slug: `${SLUG_PREFIX}taken` })
+    ).rejects.toBeInstanceOf(SlugTakenError);
+  });
+
+  it("update returns null for missing or soft-deleted workspaces", async () => {
+    const [id] = await seedWorkspaces(["upd-gone"]);
+    await repo.softDelete(id!);
+
+    expect(await repo.update(id!, { name: "Ghost" })).toBeNull();
+  });
+
+  it("softDelete stamps deletedAt once and reports a repeat as a miss", async () => {
+    const [id] = await seedWorkspaces(["del"]);
+
+    expect(await repo.softDelete(id!)).toBe(true);
+    expect(await repo.softDelete(id!)).toBe(false);
+
+    const [row] = await client.db
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.id, id!));
+    expect(row?.deletedAt).toBeInstanceOf(Date);
+  });
 });

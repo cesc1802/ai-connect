@@ -1,7 +1,6 @@
 export type { UserRecord, NewUser, UserRepository } from "./user-repository.js";
 export { UsernameTakenError } from "./user-repository.js";
 export { DrizzleUserRepository } from "./drizzle-user-repository.js";
-export { InMemoryUserRepository } from "./in-memory-user-repository.js";
 export { seedDrizzleDevData } from "./seed-users.js";
 export { CredentialsVerifier } from "./credentials-verifier.js";
 export { AuthService } from "./auth-service.js";

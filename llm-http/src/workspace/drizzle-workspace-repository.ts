@@ -5,6 +5,7 @@ import {
   type NewWorkspaceInput,
   type PageOptions,
   type WorkspacePage,
+  type WorkspacePatch,
   type WorkspaceRepository,
   type WorkspaceSummary,
 } from "./workspace-repository.js";
@@ -78,6 +79,58 @@ export class DrizzleWorkspaceRepository implements WorkspaceRepository {
       }
       throw err;
     }
+  }
+
+  async getById(id: string): Promise<WorkspaceSummary | null> {
+    const [row] = await this.client.db
+      .select(summaryColumns)
+      .from(workspaces)
+      .where(and(eq(workspaces.id, id), isNull(workspaces.deletedAt)))
+      .limit(1);
+    return row ?? null;
+  }
+
+  async isMember(userId: string, workspaceId: string): Promise<boolean> {
+    const [row] = await this.client.db
+      .select({ userId: userWorkspaces.userId })
+      .from(userWorkspaces)
+      .where(
+        and(
+          eq(userWorkspaces.userId, userId),
+          eq(userWorkspaces.workspaceId, workspaceId)
+        )
+      )
+      .limit(1);
+    return row !== undefined;
+  }
+
+  async update(
+    id: string,
+    patch: WorkspacePatch
+  ): Promise<WorkspaceSummary | null> {
+    try {
+      const [row] = await this.client.db
+        .update(workspaces)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(and(eq(workspaces.id, id), isNull(workspaces.deletedAt)))
+        .returning(summaryColumns);
+      return row ?? null;
+    } catch (err) {
+      if (isUniqueViolation(err) && patch.slug) {
+        throw new SlugTakenError(patch.slug);
+      }
+      throw err;
+    }
+  }
+
+  async softDelete(id: string): Promise<boolean> {
+    const now = new Date();
+    const rows = await this.client.db
+      .update(workspaces)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(and(eq(workspaces.id, id), isNull(workspaces.deletedAt)))
+      .returning({ id: workspaces.id });
+    return rows.length > 0;
   }
 }
 

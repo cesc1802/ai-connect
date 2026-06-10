@@ -1,7 +1,7 @@
 # LLM Gateway - Project Roadmap
 
-**Last Updated:** April 16, 2026  
-**Current Status:** v1.0.0 - Core Release  
+**Last Updated:** June 10, 2026  
+**Current Status:** v0.0.2 - Workspace Management + v1.0.0 Core  
 **Next Milestone:** v1.1.0 - Enhanced Observability
 
 ## Vision
@@ -39,6 +39,31 @@ Provide a production-ready, provider-agnostic LLM abstraction layer that:
 - Anthropic lacks JSON mode (provider limitation)
 - No caching layer for identical requests
 - No cost estimation / budgeting tools
+
+---
+
+### v0.0.2 - Workspace Management (COMPLETE)
+**Status:** ✅ Released  
+**Release Date:** June 10, 2026
+
+#### Features
+- ✅ Workspace paging: `GET /workspaces?page=1&limit=20` (admin: all; member: own)
+- ✅ Workspace creation: `POST /workspaces` (admin-only, auto-slug from name)
+- ✅ Workspace fetch: `GET /workspaces/:id` (admin: any; member: own only or 404)
+- ✅ Workspace update: `PATCH /workspaces/:id` (admin-only, partial update)
+- ✅ Workspace delete: `DELETE /workspaces/:id` (admin-only, soft-delete)
+- ✅ Active workspace resolver: `GET /api/me/active-workspace`
+- ✅ Repository pattern with Postgres (Drizzle ORM) implementation
+- ✅ Role-based access control (existence leak prevention)
+- ✅ UI: workspace list, detail, create dialog, settings tab
+- ✅ Utilities: Vietnamese-aware slugify, pagination component
+
+#### Breaking Changes
+- None (new endpoints, backward compatible)
+
+#### Known Limitations
+- Member-only workspace creation requires admin (future: self-service)
+- No batch workspace operations (future: bulk delete/rename)
 
 ---
 

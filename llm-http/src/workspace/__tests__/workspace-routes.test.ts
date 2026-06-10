@@ -26,6 +26,10 @@ describe("Workspace Routes", () => {
       listAll: vi.fn(),
       listForUser: vi.fn(),
       create: vi.fn(),
+      getById: vi.fn(),
+      isMember: vi.fn(),
+      update: vi.fn(),
+      softDelete: vi.fn(),
     };
   });
 

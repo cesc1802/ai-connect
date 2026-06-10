@@ -1,8 +1,59 @@
 # LLM Gateway - Project Changelog
 
-**Last Updated:** April 17, 2026
+**Last Updated:** June 10, 2026
 
 This document records significant changes, features, and fixes across the LLM Gateway project.
+
+---
+
+## [Unreleased] - 2026-06-10
+
+### llm-http v0.0.2 (Feature Release)
+
+**Workspace Management — Paging & CRUD**
+
+New endpoints for paginated workspace listing and full CRUD operations:
+- `GET /workspaces` — paginated list (page, limit; default 20, max 100), role-aware (admin: all; member: own only)
+- `POST /workspaces` — create workspace (admin-only, auto-slug from name)
+- `GET /workspaces/:id` — fetch single (admin: any; member: own only or 404)
+- `PATCH /workspaces/:id` — update name/slug (admin-only, ≥1 field required)
+- `DELETE /workspaces/:id` — soft-delete (admin-only, 204 on success)
+- `GET /api/me/active-workspace` — resolve user's active workspace
+
+**Architecture:**
+- Repository pattern + Postgres (Drizzle ORM) implementation
+- Workspace repository interface: `getById()`, `isMember()`, `listAll()`, `listForUser()`, `create()`, `update()`, `softDelete()`
+- Role-based access control: member reads return 404 on non-membership (prevents existence leak)
+- Slug validation: `^[a-z0-9]+(-[a-z0-9]+)*$` (max 50 chars); auto-derived from name if omitted
+- Error codes: `workspace_not_found` (404), `invalid_body` (400), `slug_taken` (409)
+
+**Testing:**
+- Comprehensive test coverage for all endpoints
+- Role-based access control verification
+- Slug validation and uniqueness tests
+- Paging boundary and parameter tests
+
+### llm-ui
+
+**Workspace Management UI**
+
+New screens, components, and utilities for workspace management:
+- Workspace list screen with server-side pagination (GET /workspaces?page&limit=6)
+- Create dialog with auto-slug derivation from Vietnamese names
+- Workspace detail screen with tabbed layout (overview, settings, members, templates, providers)
+- Settings tab: edit name/slug (PATCH) and delete workspace (DELETE with confirm)
+- Slugify utility for Vietnamese-aware slug generation (src/lib/slugify.ts)
+- Workspaces API client (src/lib/workspaces-api.ts)
+- Pagination component with page navigation (src/components/ui/pagination.tsx)
+
+**Files added:**
+- `src/screens/workspaces-list-screen.tsx`
+- `src/screens/workspace-detail-screen.tsx`
+- `src/lib/workspaces-api.ts`
+- `src/lib/slugify.ts`
+- `src/components/ui/pagination.tsx`
+- `src/components/widgets/workspace-create-dialog.tsx`
+- `src/components/widgets/workspace-settings-tab.tsx`
 
 ---
 
@@ -85,6 +136,8 @@ Core LLM provider abstraction with resilience patterns.
 
 | Date | Package | Version | Type | Summary |
 |------|---------|---------|------|---------|
+| 2026-06-10 | llm-http | 0.0.2 | Feature | Workspace paging & CRUD (GET/POST/PATCH/DELETE) |
+| 2026-06-10 | llm-ui | — | Feature | Workspace management screens & components |
 | 2026-04-17 | llm-http | 0.0.1 | Feature | Initial HTTP/WS server release |
 | 2026-04-17 | llm-shared | 0.0.1 | Feature | Initial shared types release |
 | 2026-04-17 | llm-gateway | 1.0.0 | Stable | Production-ready gateway |

@@ -31,6 +31,11 @@ const configSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+  // Comma-separated list of website addresses allowed to call this API (CORS).
+  CORS_ORIGIN: z
+    .string()
+    .default("http://localhost:5173")
+    .transform((s) => s.split(",").map((o) => o.trim()).filter(Boolean)),
   ANTHROPIC_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OLLAMA_BASE_URL: z.string().url().optional(),
