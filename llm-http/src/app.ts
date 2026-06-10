@@ -8,6 +8,7 @@ import {
   createRequireWorkspaceAdmin,
 } from "./auth/auth-middleware.js";
 import { createActiveWorkspaceRoutes } from "./workspace/active-workspace-routes.js";
+import { createWorkspaceRoutes } from "./workspace/workspace-routes.js";
 import { createOrgUsersRoutes } from "./admin/org/users-routes.js";
 import { createOrgTemplatesRouter } from "./admin/org/templates-routes.js";
 import { createOrgProvidersRoutes } from "./admin/org/providers-routes.js";
@@ -18,6 +19,7 @@ import { createWsTemplatesRoutes } from "./admin/workspace/ws-templates-routes.j
 import { createWsQuotasRoutes } from "./admin/workspace/quotas-routes.js";
 import { createRedactLogMiddleware } from "./admin/redact-log-middleware.js";
 import { createRateLimit } from "./shared/rate-limit.js";
+import { createCors } from "./shared/cors-middleware.js";
 import { createErrorHandler } from "./shared/error-handler.js";
 
 export function createApp(container: AppContainer): Express {
@@ -29,6 +31,7 @@ export function createApp(container: AppContainer): Express {
     app.set("trust proxy", 1);
   }
 
+  app.use(createCors(config.CORS_ORIGIN));
   app.use(express.json({ limit: "1mb" }));
   app.use(createRedactLogMiddleware());
 
@@ -52,6 +55,11 @@ export function createApp(container: AppContainer): Express {
     "/api/me/active-workspace",
     requireAuth,
     createActiveWorkspaceRoutes(container.activeWorkspaceResolver),
+  );
+  app.use(
+    "/workspaces",
+    requireAuth,
+    createWorkspaceRoutes(container.workspaceRepository),
   );
   app.use(
     "/admin/org/users",

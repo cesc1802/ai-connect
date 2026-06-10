@@ -59,6 +59,8 @@ import { seedDrizzleDevData } from "./auth/seed-users.js";
 import type { ActiveWorkspaceResolver } from "./workspace/active-workspace-resolver.js";
 import { InMemoryActiveWorkspaceResolver } from "./workspace/active-workspace-resolver.js";
 import { DrizzleActiveWorkspaceResolver } from "./workspace/drizzle-active-workspace-resolver.js";
+import type { WorkspaceRepository } from "./workspace/workspace-repository.js";
+import { DrizzleWorkspaceRepository } from "./workspace/drizzle-workspace-repository.js";
 import { ChatHandler } from "./chat-v2/chat-handler.js";
 
 export interface AppContainer {
@@ -83,6 +85,7 @@ export interface AppContainer {
   convRepo: ConversationRepository;
   msgRepo: MessageRepository;
   activeWorkspaceResolver: ActiveWorkspaceResolver;
+  workspaceRepository: WorkspaceRepository;
   dbClient: DbClient;
   chatHandler: ChatHandler;
 }
@@ -119,6 +122,7 @@ export async function buildContainer(
   const dbClient = createDbClient({ url: databaseUrl, poolMax: 10 });
 
   const userRepository = new DrizzleUserRepository(dbClient);
+  const workspaceRepository = new DrizzleWorkspaceRepository(dbClient);
   const credentialsVerifier = new CredentialsVerifier(userRepository);
   const authService = new AuthService(
     credentialsVerifier,
@@ -221,6 +225,7 @@ export async function buildContainer(
     convRepo,
     msgRepo,
     activeWorkspaceResolver,
+    workspaceRepository,
     dbClient,
     chatHandler,
   };
@@ -237,18 +242,6 @@ function seedWsMembers(): Map<string, WsMemberRow[]> {
           role: "admin",
           joinedAt: "2026-01-15T09:00:00.000Z",
         },
-        {
-          id: "seed-ws-member",
-          email: "grace@demo.example",
-          role: "member",
-          joinedAt: "2026-02-08T14:30:00.000Z",
-        },
-        {
-          id: "seed-ws-viewer",
-          email: "alan@demo.example",
-          role: "viewer",
-          joinedAt: "2026-03-01T10:00:00.000Z",
-        },
       ],
     ],
   ]);
@@ -264,12 +257,6 @@ function seedOrgUsers(): Map<string, OrgUserRow[]> {
           email: "ada@demo.example",
           status: "active",
           joinedAt: "2026-01-15T09:00:00.000Z",
-        },
-        {
-          id: "seed-user-pending",
-          email: "grace@demo.example",
-          status: "pending",
-          joinedAt: "2026-02-08T14:30:00.000Z",
         },
       ],
     ],
