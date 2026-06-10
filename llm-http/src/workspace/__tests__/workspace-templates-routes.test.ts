@@ -17,7 +17,7 @@ const TEMPLATE_ID = "dddddddd-0000-0000-0000-000000000001";
 const WS_SUMMARY = { id: WS_ID, slug: "alpha", name: "Alpha", createdAt: new Date() };
 const TEMPLATE_ROW = {
   id: TEMPLATE_ID, slug: "t1", title: "Review PR", category: "Kỹ thuật",
-  icon: "code", authorName: "Thược", uses: 1240, description: "desc",
+  icon: "code", authorName: "Thược", uses: 1240, description: "desc", body: null,
 };
 
 describe("Workspace Templates Routes", () => {
@@ -27,6 +27,9 @@ describe("Workspace Templates Routes", () => {
   beforeEach(() => {
     templatesRepo = {
       listLibrary: vi.fn(),
+      createTemplate: vi.fn(),
+      updateTemplate: vi.fn(),
+      deleteTemplate: vi.fn(),
       listForWorkspace: vi.fn(),
       attach: vi.fn(),
       detach: vi.fn(),

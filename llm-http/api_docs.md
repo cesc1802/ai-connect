@@ -195,6 +195,148 @@ curl "$BASE/api/me/active-workspace" \
 
 ---
 
+### Prompt Templates (Org Library)
+
+Org-wide prompt-template library. **Read: any authenticated user. Write (POST/PATCH/DELETE): system `admin` only.**
+
+**Validation**
+- `title`: 1–80 chars (trimmed)
+- `category`: 1–40 chars (trimmed)
+- `icon`: 1–40 chars (trimmed)
+- `description`: 1–280 chars (trimmed)
+- `body`: ≤8000 chars, optional; blank string normalized to `null`
+
+#### `GET /prompt-templates`
+
+List org template library. **Auth required.**
+
+```bash
+curl "$BASE/prompt-templates" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**200**
+```json
+{
+  "templates": [
+    {
+      "id": "<uuid>",
+      "slug": "tpl-<uuid>",
+      "title": "Code Review",
+      "category": "engineering",
+      "icon": "code",
+      "authorName": "demo",
+      "uses": 0,
+      "description": "Review and comment on code",
+      "body": "You are a code reviewer..."
+    }
+  ]
+}
+```
+
+| Status | Code | When |
+|--------|------|------|
+| 401 | `missing_token` | Missing Bearer token |
+
+#### `POST /prompt-templates`
+
+Create a template. **Auth required + system `admin` role.** Slug is auto-generated as `tpl-<uuid>`; author resolved from JWT.
+
+**Request**
+```json
+{
+  "title": "Code Review",
+  "category": "engineering",
+  "icon": "code",
+  "description": "Review and comment on code",
+  "body": "You are a code reviewer..."
+}
+```
+
+```bash
+curl -X POST "$BASE/prompt-templates" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Code Review","category":"engineering","icon":"code","description":"...","body":"..."}'
+```
+
+**201**
+```json
+{
+  "template": {
+    "id": "<uuid>",
+    "slug": "tpl-<uuid>",
+    "title": "Code Review",
+    "category": "engineering",
+    "icon": "code",
+    "authorName": "demo",
+    "uses": 0,
+    "description": "Review and comment on code",
+    "body": "You are a code reviewer..."
+  }
+}
+```
+
+| Status | Code | When |
+|--------|------|------|
+| 400 | `invalid_input` | Schema validation failed (+ Zod `issues`) |
+| 401 | `missing_token` / `invalid_token` | Missing or invalid Bearer token |
+| 403 | `role_required` | Caller is not a system admin |
+
+#### `PATCH /prompt-templates/:id`
+
+Update a template (partial; at least one field required). **Auth required + system `admin` role.**
+
+**Request** (at least one field)
+```json
+{
+  "title": "Code Review v2",
+  "description": "Updated description..."
+}
+```
+
+```bash
+curl -X PATCH "$BASE/prompt-templates/<id>" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Code Review v2"}'
+```
+
+**200**
+```json
+{
+  "template": { /* full template object */ }
+}
+```
+
+| Status | Code | When |
+|--------|------|------|
+| 400 | `invalid_input` | Schema validation failed or no fields provided |
+| 401 | `missing_token` / `invalid_token` | Missing or invalid Bearer token |
+| 403 | `role_required` | Caller is not a system admin |
+| 404 | `not_found` | Template does not exist |
+
+#### `DELETE /prompt-templates/:id`
+
+Delete a template. **Auth required + system `admin` role.** Fails with 409 if template is attached to any workspace (foreign key restrict).
+
+```bash
+curl -X DELETE "$BASE/prompt-templates/<id>" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**204**  
+No response body.
+
+| Status | Code | When |
+|--------|------|------|
+| 401 | `missing_token` / `invalid_token` | Missing or invalid Bearer token |
+| 403 | `role_required` | Caller is not a system admin |
+| 404 | `not_found` | Template does not exist |
+| 409 | `template_in_use` | Template is attached to one or more workspaces (FK restrict) |
+
+---
+
 ### Workspaces
 
 #### `GET /workspaces`
@@ -860,6 +1002,10 @@ See `README.md` for the full table. Key ones:
 | POST | `/auth/login` | none (rate limited) |
 | POST | `/auth/register` | none (rate limited) |
 | GET | `/api/me/active-workspace` | user |
+| GET | `/prompt-templates` | user |
+| POST | `/prompt-templates` | system admin |
+| PATCH | `/prompt-templates/:id` | system admin |
+| DELETE | `/prompt-templates/:id` | system admin |
 | GET | `/workspaces` | user |
 | POST | `/workspaces` | system admin |
 | GET | `/workspaces/:id` | user (role-aware) |

@@ -512,8 +512,8 @@ llm-http/src/
 │   ├── workspace-providers-routes.ts # GET /workspaces/:id/providers; PATCH /:providerId (admin-only)
 │   ├── workspace-providers-repository.ts # Interface + Drizzle implementation
 │   ├── workspace-templates-routes.ts # GET/POST/DELETE /workspaces/:id/templates (admin-only mutations)
-│   ├── workspace-templates-repository.ts # Interface + Drizzle implementation
-│   ├── prompt-templates-routes.ts # GET /prompt-templates (org library, any authenticated user)
+│   ├── workspace-templates-repository.ts # Interface + Drizzle implementation (with TemplateInUseError on FK restrict)
+│   ├── prompt-templates-routes.ts # GET/POST/PATCH/DELETE /prompt-templates (full CRUD; admin-only write, auth read)
 │   ├── seed-prompt-templates.ts # Dev seed: 12 Vietnamese templates (NODE_ENV gated)
 │   ├── active-workspace-resolver.ts # Interface for active workspace resolution
 │   ├── drizzle-active-workspace-resolver.ts # Postgres-backed resolver
@@ -658,8 +658,8 @@ llm-db/src/
 │   ├── provider-catalogs.ts      # LLM provider registry
 │   ├── providers.ts              # Provider instances
 │   ├── workspace-providers.ts    # Workspace provider overrides
-│   ├── prompt-templates.ts       # Org prompt template library (slug unique, title, category, icon, author_name, uses, description)
-│   ├── workspace-templates.ts    # Workspace-template join (composite PK: workspace_id + template_id)
+│   ├── prompt-templates.ts       # Org prompt template library (slug unique, title, category, icon, author_name, uses, description, body nullable)
+│   ├── workspace-templates.ts    # Workspace-template join (composite PK: workspace_id + template_id, cascade delete)
 │   ├── usage-metrics.ts          # Token usage tracking
 │   └── index.ts                  # Export all schema
 │
@@ -669,7 +669,8 @@ llm-db/src/
 ├── drizzle/                       # Generated migrations (forward-only)
 │   ├── 0000_phase02_init.sql     # Phase 2: Initial 10-table schema (workspaces, users, conversations, messages, providers, etc.)
 │   ├── 0001_add_user_system_role.sql # Phase 2: Add system role to users table
-│   └── 0002_prompt_template_library.sql # Add prompt_templates and workspace_templates tables
+│   ├── 0002_prompt_template_library.sql # Add prompt_templates and workspace_templates tables
+│   └── 0003_prompt_template_body.sql # Add nullable body column to prompt_templates
 │
 ├── drizzle.config.ts             # drizzle-kit config (reads compiled dist/schema/index.js)
 ├── tsconfig.json                 # TypeScript build config
@@ -731,6 +732,7 @@ await client.close();
 llm-ui/src/
 ├── screens/
 │   ├── workspace-detail-screen.tsx    # Workspace management 4-tab interface
+│   ├── templates-screen.tsx           # Org prompt-template library management (admin CRUD)
 │   ├── workspaces-screen.tsx          # Workspace list with search/filter
 │   ├── chat-screen.tsx                # Chat interface with streaming
 │   └── ...
@@ -749,13 +751,19 @@ llm-ui/src/
 │   │   ├── toggle-switch.tsx          # Reusable toggle component
 │   │   └── ws-provider-row.tsx        # Provider list item
 │   │
+│   ├── templates/                     # Org prompt-template management components
+│   │   ├── template-card.tsx          # Single template card (library view, admin edit)
+│   │   ├── template-dialog.tsx        # Create/edit dialog with live preview + 12-icon picker + mono body textarea
+│   │   └── template-delete-dialog.tsx # Delete confirm with 409 inline error display
+│   │
 │   ├── ui/                            # shadcn/ui base components
 │   ├── widgets/                       # Shared widgets (role-badge, ws-emblem, etc.)
 │   └── ...
 │
 ├── lib/
+│   ├── prompt-templates-api.ts        # Org template library CRUD API client (createTemplate, updateTemplate, deleteTemplate, listTemplateLibrary)
 │   ├── workspace-members-api.ts       # Members API client
-│   ├── workspace-templates-api.ts     # Templates API client
+│   ├── workspace-templates-api.ts     # Workspace-template attachment API client
 │   ├── workspace-providers-api.ts     # Providers API client
 │   ├── api-member-adapter.ts          # Adapter: API response → UI model
 │   ├── workspace-types.ts             # Shared TypeScript types
@@ -773,21 +781,30 @@ llm-ui/src/
 
 **Key Features:**
 
+- **Org Prompt-Template Library Management** (`templates-screen.tsx` + `components/templates/*`)
+  - Admin CRUD: Create, edit, update, delete templates with live preview
+  - Template fields: title (1–80), category (1–40), icon (1–40 + 12-icon picker UI), description (1–280), body (≤8000, nullable)
+  - Delete confirm shows FK constraint violations inline (409 `template_in_use` when attached to workspaces)
+  - Client-side paging: 9 templates per page, search by title/description
+  - Components: `template-card.tsx` (library view), `template-dialog.tsx` (create/edit with live preview), `template-delete-dialog.tsx` (confirm + error display)
+
 - **Workspace Detail Screen:** 4-tab interface (Members/Templates/Providers/Settings)
   - Members tab: List with add/edit/remove; role assignment (wsadmin, pm, ba, qa, dev)
-  - Templates tab: Org library attachment interface with search
+  - Templates tab: Workspace-specific attachment interface (library → attach to workspace)
   - Providers tab: Enable/disable LLM providers per workspace
   - Settings tab: Workspace name/slug edit (admin-only)
 
 - **API Integration:** Type-safe Fetch API clients with error handling
+  - Org templates: Full CRUD (createTemplate, updateTemplate, deleteTemplate, listTemplateLibrary)
   - Members: List, add, update roles, remove
-  - Templates: List library, list attached, attach, detach
+  - Workspace attachments: List attached, attach, detach templates
   - Providers: List, toggle enabled flag
 
 - **UI Components:** Modular, reusable, keyboard-accessible
   - Dialogs, popovers, dropdowns (shadcn/ui base)
   - Role checklist, toggle switches, member/provider/template rows
   - Status badges with visual hue (derived from workspace slug)
+  - Icon picker (12-icon registry in `lib/icons.ts`), mono body textarea for template content
 
 - **State Management:** React hooks (useState, useCallback, useEffect)
   - Monotonic sequence guards for race condition handling

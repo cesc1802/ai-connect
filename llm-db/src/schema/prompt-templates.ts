@@ -11,6 +11,8 @@ export const promptTemplates = pgTable("prompt_templates", {
   authorName: text("author_name"),
   uses: integer("uses").notNull().default(0),
   description: text("description"),
+  /** Prompt body with {{variable}} placeholders. Nullable — seeded rows have none. */
+  body: text("body"),
   ...auditColumns,
 });
 

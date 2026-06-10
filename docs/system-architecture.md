@@ -595,42 +595,57 @@ llm-http
 
 ---
 
-## Workspace Detail Feature (Members / Templates / Providers Tabs)
+## Workspace Detail + Org Template Management
 
-**Overview:** Workspace admins manage members, attach prompt templates, and configure providers from a detail screen.
+**Workspace Detail Feature (Members / Templates / Providers Tabs):**
 
-**Feature Scope:**
+**Overview:** Workspace admins manage members, attach prompt templates, and configure providers from a detail screen. Org admins manage the shared prompt-template library via a dedicated templates screen.
+
+**Workspace Detail Feature Scope:**
 - Members: Add/remove users, assign workspace-scoped roles (wsadmin, pm, ba, qa, dev)
-- Templates: Attach organization prompt templates to workspace
-- Providers: Enable/disable LLM providers at workspace level
+- Templates: Attach/detach organization prompt templates to workspace (admin-only mutations)
+- Providers: Enable/disable LLM providers at workspace level (admin-only mutations)
+
+**Org Template Library CRUD Scope (full admin-only):**
+- Create: POST title (1–80), category (1–40), icon (1–40), description (1–280), body (≤8000, optional/nullable)
+- Read: GET library (any authenticated user) or admin-only library management
+- Update: PATCH ≥1 field (admin-only)
+- Delete: DELETE (admin-only, 409 `template_in_use` if attached to workspace via FK restrict)
+- Slug auto-generation: `tpl-<uuid>` on create, author resolved from JWT
 
 **Nested Resource Architecture:**
 ```
+/prompt-templates            → GET (any auth), POST/PATCH/DELETE (admin-only, full CRUD)
+
 /workspaces/:id/
 ├── /members                  → GET (list), POST (add), /members/candidates (admin)
 │   └── /:userId             → PATCH (update roles), DELETE
 ├── /providers               → GET (list), /providers/:providerId (PATCH enable/disable)
 └── /templates               → GET (list), POST (attach), DELETE /:templateId
-
-/prompt-templates            → GET (org library)
 ```
 
 **Key Implementation Details:**
 
 *Database Layer:*
-- `promptTemplates` table: Org-wide immutable library (seed-based in dev)
-- `workspaceTemplates` join: workspace_id + template_id composite PK with cascade delete
+- `promptTemplates` table: Org-wide mutable library (title, category, icon, description, body nullable, author_name, uses counter, slug unique)
+- Migration: `0003_prompt_template_body.sql` adds nullable `body` text column
+- `workspaceTemplates` join: workspace_id + template_id composite PK with cascade delete (deleting template → detach from all workspaces)
 - All endpoints use Drizzle ORM repositories with role-aware access control
+- `WorkspaceTemplatesRepository` gains `createTemplate`, `updateTemplate`, `deleteTemplate` + `TemplateInUseError` exception
 
 *HTTP Layer:*
+- `prompt-templates-routes.ts`: Full CRUD router (GET org library any-auth, POST/PATCH/DELETE admin-only); returns 201 on create, 404 on missing, 409 on FK constraint
 - Members/Providers/Templates routes mounted as nested routers in `workspace-by-id-routes.ts`
 - Access control: reads by members (404 for non-members), mutations by admin-only
 - 409 conflict on duplicate role assignment (deduped in Zod before persist)
+- Zod validation: title/category/icon/description ranges, body ≤8000, blank body normalized to null, PATCH requires ≥1 field
 - 404 leak-safe: non-member workspace queries return 404 not 403
 
 *Frontend Layer:*
-- Tab-based UI in `workspace-detail-screen.tsx` (Members/Templates/Providers/Settings)
-- Dedicated dialog components for add/edit flows
+- Org template admin screen: `templates-screen.tsx` (list, search by title/description, client-side paging 9/page, create/edit dialogs, delete confirms)
+- Workspace detail screen: `workspace-detail-screen.tsx` (Members/Templates/Providers/Settings 4-tab interface)
+- Template management components: `template-card.tsx` (admin edit UI), `template-dialog.tsx` (create/edit with live preview + 12-icon picker + mono body textarea), `template-delete-dialog.tsx` (delete confirm with 409 error inline)
+- API client: `prompt-templates-api.ts` (createTemplate, updateTemplate, deleteTemplate, listTemplateLibrary)
 - Real-time sync via sequential API calls (no polling)
 
 ---
@@ -673,10 +688,12 @@ The persistence layer provides Postgres-backed storage for conversations, messag
 │   ├─ slug (unique)                   │
 │   ├─ title, category, icon           │
 │   ├─ author_name, uses               │
-│   └─ description                     │
+│   ├─ description                     │
+│   └─ body (nullable, ≤8000 chars)   │
 │                                      │
 │ workspace_templates (join)           │
 │   └─ (workspace_id, template_id) PK  │
+│      with cascade delete              │
 └──────────────────────────────────────┘
 
 ┌──────────────────────────────────────┐
