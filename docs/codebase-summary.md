@@ -502,11 +502,19 @@ llm-http/src/
 │   ├── server-message-types.ts  # TypeScript defs (s.chat.started, s.chat.token, etc.)
 │   └── index.ts                 # Public exports
 │
-├── workspace/                    # Workspace CRUD (paging, admin)
+├── workspace/                    # Workspace CRUD (paging, admin) + detail feature
 │   ├── workspace-repository.ts  # Repository interface (getById, isMember, list, create, update, softDelete)
 │   ├── drizzle-workspace-repository.ts  # Postgres implementation (Drizzle ORM)
 │   ├── workspace-routes.ts      # GET/POST /workspaces (paging + admin create)
-│   ├── workspace-by-id-routes.ts # GET/PATCH/DELETE /workspaces/:id (single)
+│   ├── workspace-by-id-routes.ts # GET/PATCH/DELETE /workspaces/:id + mounts nested routers
+│   ├── workspace-members-routes.ts # GET/POST/PATCH/DELETE /workspaces/:id/members (admin-only mutations)
+│   ├── workspace-members-repository.ts # Interface + Drizzle implementation
+│   ├── workspace-providers-routes.ts # GET /workspaces/:id/providers; PATCH /:providerId (admin-only)
+│   ├── workspace-providers-repository.ts # Interface + Drizzle implementation
+│   ├── workspace-templates-routes.ts # GET/POST/DELETE /workspaces/:id/templates (admin-only mutations)
+│   ├── workspace-templates-repository.ts # Interface + Drizzle implementation
+│   ├── prompt-templates-routes.ts # GET /prompt-templates (org library, any authenticated user)
+│   ├── seed-prompt-templates.ts # Dev seed: 12 Vietnamese templates (NODE_ENV gated)
 │   ├── active-workspace-resolver.ts # Interface for active workspace resolution
 │   ├── drizzle-active-workspace-resolver.ts # Postgres-backed resolver
 │   ├── active-workspace-routes.ts # GET /api/me/active-workspace
@@ -588,6 +596,33 @@ llm-http/src/
 - Repository pattern: interface + Postgres (Drizzle ORM) implementation
 - Comprehensive tests for role-based access control and paging
 
+**Workspace Detail Feature (Members/Templates/Providers Tabs):**
+
+*New Database Tables:*
+- `prompt_templates`: Org-wide template library (id, slug unique, title, category, icon, author_name, uses, description)
+- `workspace_templates`: Join table linking workspaces to templates (workspace_id + template_id composite PK)
+- Migration: `llm-db/drizzle/0002_prompt_template_library.sql`
+- Dev seed: 12 Vietnamese templates (NODE_ENV gated, seeded in container.ts)
+
+*New HTTP Endpoints (all under requireAuth):*
+- `GET /prompt-templates` → {templates:[...]} (org library, any authenticated user)
+- `GET /workspaces/:id/members` → {members:[{userId, username, wsRoles[], orgRole}]} (member-scoped, 404 for non-members)
+- `GET /workspaces/:id/members/candidates` (admin-only, users not yet in workspace)
+- `POST /workspaces/:id/members` {userId, roles[]} → 201; 409 member_exists; roles deduped via zod transform
+- `PATCH /workspaces/:id/members/:userId` {roles[]} (admin-only); `DELETE` → 204
+- `GET /workspaces/:id/providers` → {providers:[{providerId, name, keyLabel, icon, enabled}]} (member-scoped)
+- `PATCH /workspaces/:id/providers/:providerId` {enabled} (admin-only)
+- `GET /workspaces/:id/templates` (member-scoped); `POST` {templateId} → 201 (409 already attached); `DELETE .../templates/:templateId` → 204
+- Implementation: workspace-members-routes.ts, workspace-providers-routes.ts, workspace-templates-routes.ts + repository layers; mounted in workspace-by-id-routes.ts
+
+*New Frontend Components (llm-ui/src/components/workspace/*):*
+- `workspace-detail-screen.tsx`: 4-tab screen (Members/Templates/Providers/Settings)
+- `members-tab.tsx`, `role-edit-popover.tsx`, `add-member-dialog.tsx`, `ws-member-row.tsx`, `ws-role-checklist.tsx`
+- `templates-tab.tsx`, `add-templates-dialog.tsx`, `ws-template-card.tsx`
+- `providers-tab.tsx`, `toggle-switch.tsx`, `ws-provider-row.tsx`
+- API modules: `workspace-members-api.ts`, `workspace-templates-api.ts`, `workspace-providers-api.ts`, `api-member-adapter.ts`, `workspace-types.ts`
+- Member rows display username for both name and email (no email column)
+
 **Testing:**
 - 400+ tests passing (includes event-driven tests)
 - 90%+ overall coverage
@@ -623,6 +658,8 @@ llm-db/src/
 │   ├── provider-catalogs.ts      # LLM provider registry
 │   ├── providers.ts              # Provider instances
 │   ├── workspace-providers.ts    # Workspace provider overrides
+│   ├── prompt-templates.ts       # Org prompt template library (slug unique, title, category, icon, author_name, uses, description)
+│   ├── workspace-templates.ts    # Workspace-template join (composite PK: workspace_id + template_id)
 │   ├── usage-metrics.ts          # Token usage tracking
 │   └── index.ts                  # Export all schema
 │
@@ -631,7 +668,8 @@ llm-db/src/
 │
 ├── drizzle/                       # Generated migrations (forward-only)
 │   ├── 0000_phase02_init.sql     # Phase 2: Initial 10-table schema (workspaces, users, conversations, messages, providers, etc.)
-│   └── 0001_add_user_system_role.sql # Phase 2: Add system role to users table
+│   ├── 0001_add_user_system_role.sql # Phase 2: Add system role to users table
+│   └── 0002_prompt_template_library.sql # Add prompt_templates and workspace_templates tables
 │
 ├── drizzle.config.ts             # drizzle-kit config (reads compiled dist/schema/index.js)
 ├── tsconfig.json                 # TypeScript build config
@@ -678,3 +716,80 @@ await client.close();
 ```
 
 **See Also:** [Database Migrations](./database-migrations.md) for setup, workflow, and CI/CD integration.
+
+---
+
+## 5. llm-ui Package (React Frontend)
+
+**Status:** ✅ Implemented (chat interface + workspace detail screen)
+
+**Technology:** React 18 + TypeScript + Tailwind CSS + shadcn/ui + TanStack Router
+
+**Files:**
+
+```
+llm-ui/src/
+├── screens/
+│   ├── workspace-detail-screen.tsx    # Workspace management 4-tab interface
+│   ├── workspaces-screen.tsx          # Workspace list with search/filter
+│   ├── chat-screen.tsx                # Chat interface with streaming
+│   └── ...
+│
+├── components/
+│   ├── workspace/                     # Workspace detail feature components
+│   │   ├── members-tab.tsx            # Members list with add/remove
+│   │   ├── add-member-dialog.tsx      # Dialog to add new member
+│   │   ├── role-edit-popover.tsx      # Popover to edit member roles
+│   │   ├── ws-member-row.tsx          # Single member list item
+│   │   ├── ws-role-checklist.tsx      # Role selection checklist
+│   │   ├── templates-tab.tsx          # Templates list with attach/detach
+│   │   ├── add-templates-dialog.tsx   # Dialog to attach templates
+│   │   ├── ws-template-card.tsx       # Template card with attach button
+│   │   ├── providers-tab.tsx          # Provider list with enable/disable
+│   │   ├── toggle-switch.tsx          # Reusable toggle component
+│   │   └── ws-provider-row.tsx        # Provider list item
+│   │
+│   ├── ui/                            # shadcn/ui base components
+│   ├── widgets/                       # Shared widgets (role-badge, ws-emblem, etc.)
+│   └── ...
+│
+├── lib/
+│   ├── workspace-members-api.ts       # Members API client
+│   ├── workspace-templates-api.ts     # Templates API client
+│   ├── workspace-providers-api.ts     # Providers API client
+│   ├── api-member-adapter.ts          # Adapter: API response → UI model
+│   ├── workspace-types.ts             # Shared TypeScript types
+│   ├── workspaces-api.ts              # Workspace CRUD API client
+│   ├── auth.ts                        # Auth management (token storage, login)
+│   ├── api-error.ts                   # API error handling
+│   ├── icons.ts                       # Icon registry (Lucide)
+│   ├── cn.ts                          # Tailwind className utilities
+│   ├── slugify.ts                     # URL slug generation + hue derivation
+│   └── ...
+│
+├── App.tsx                            # Main app router
+└── main.tsx                           # Entry point
+```
+
+**Key Features:**
+
+- **Workspace Detail Screen:** 4-tab interface (Members/Templates/Providers/Settings)
+  - Members tab: List with add/edit/remove; role assignment (wsadmin, pm, ba, qa, dev)
+  - Templates tab: Org library attachment interface with search
+  - Providers tab: Enable/disable LLM providers per workspace
+  - Settings tab: Workspace name/slug edit (admin-only)
+
+- **API Integration:** Type-safe Fetch API clients with error handling
+  - Members: List, add, update roles, remove
+  - Templates: List library, list attached, attach, detach
+  - Providers: List, toggle enabled flag
+
+- **UI Components:** Modular, reusable, keyboard-accessible
+  - Dialogs, popovers, dropdowns (shadcn/ui base)
+  - Role checklist, toggle switches, member/provider/template rows
+  - Status badges with visual hue (derived from workspace slug)
+
+- **State Management:** React hooks (useState, useCallback, useEffect)
+  - Monotonic sequence guards for race condition handling
+  - Error boundaries for graceful degradation
+  - Real-time sync via sequential API calls (no polling)

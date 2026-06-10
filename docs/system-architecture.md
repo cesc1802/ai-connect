@@ -595,6 +595,46 @@ llm-http
 
 ---
 
+## Workspace Detail Feature (Members / Templates / Providers Tabs)
+
+**Overview:** Workspace admins manage members, attach prompt templates, and configure providers from a detail screen.
+
+**Feature Scope:**
+- Members: Add/remove users, assign workspace-scoped roles (wsadmin, pm, ba, qa, dev)
+- Templates: Attach organization prompt templates to workspace
+- Providers: Enable/disable LLM providers at workspace level
+
+**Nested Resource Architecture:**
+```
+/workspaces/:id/
+├── /members                  → GET (list), POST (add), /members/candidates (admin)
+│   └── /:userId             → PATCH (update roles), DELETE
+├── /providers               → GET (list), /providers/:providerId (PATCH enable/disable)
+└── /templates               → GET (list), POST (attach), DELETE /:templateId
+
+/prompt-templates            → GET (org library)
+```
+
+**Key Implementation Details:**
+
+*Database Layer:*
+- `promptTemplates` table: Org-wide immutable library (seed-based in dev)
+- `workspaceTemplates` join: workspace_id + template_id composite PK with cascade delete
+- All endpoints use Drizzle ORM repositories with role-aware access control
+
+*HTTP Layer:*
+- Members/Providers/Templates routes mounted as nested routers in `workspace-by-id-routes.ts`
+- Access control: reads by members (404 for non-members), mutations by admin-only
+- 409 conflict on duplicate role assignment (deduped in Zod before persist)
+- 404 leak-safe: non-member workspace queries return 404 not 403
+
+*Frontend Layer:*
+- Tab-based UI in `workspace-detail-screen.tsx` (Members/Templates/Providers/Settings)
+- Dedicated dialog components for add/edit flows
+- Real-time sync via sequential API calls (no polling)
+
+---
+
 ## Persistence Layer Architecture (@ai-connect/db)
 
 The persistence layer provides Postgres-backed storage for conversations, messages, and workspace metadata using Drizzle ORM.
@@ -616,6 +656,7 @@ The persistence layer provides Postgres-backed storage for conversations, messag
 │   └─ user_workspaces (user, workspace)
 │   └─ user_role_workspaces (role grants)
 │   └─ workspace_providers (provider overrides)
+│   └─ workspace_templates (templates attached)
 └──────────────────────────────────────┘
 
 ┌──────────────────────────────────────┐
@@ -623,6 +664,19 @@ The persistence layer provides Postgres-backed storage for conversations, messag
 ├──────────────────────────────────────┤
 │ conversations (id, workspace, user, title)
 │   └─ messages (id, conversation, role, content)
+└──────────────────────────────────────┘
+
+┌──────────────────────────────────────┐
+│      Prompt Template Library          │
+├──────────────────────────────────────┤
+│ prompt_templates (org library)       │
+│   ├─ slug (unique)                   │
+│   ├─ title, category, icon           │
+│   ├─ author_name, uses               │
+│   └─ description                     │
+│                                      │
+│ workspace_templates (join)           │
+│   └─ (workspace_id, template_id) PK  │
 └──────────────────────────────────────┘
 
 ┌──────────────────────────────────────┐
