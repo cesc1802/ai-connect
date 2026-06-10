@@ -15,6 +15,13 @@
       "when": 1781011552154,
       "tag": "0001_add_user_system_role",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781078426162,
+      "tag": "0002_prompt_template_library",
+      "breakpoints": true
     }
   ]
 }

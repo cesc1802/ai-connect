@@ -8,4 +8,6 @@ export * from "./messages.js";
 export * from "./provider-catalogs.js";
 export * from "./providers.js";
 export * from "./workspace-providers.js";
+export * from "./prompt-templates.js";
+export * from "./workspace-templates.js";
 export * from "./usage-metrics.js";
