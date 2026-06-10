@@ -4,6 +4,12 @@ import {
   SlugTakenError,
   type WorkspaceRepository,
 } from "./workspace-repository.js";
+import { createWorkspaceMembersRoutes } from "./workspace-members-routes.js";
+import { createWorkspaceProvidersRoutes } from "./workspace-providers-routes.js";
+import { createWorkspaceTemplatesRoutes } from "./workspace-templates-routes.js";
+import type { WorkspaceMembersRepository } from "./workspace-members-repository.js";
+import type { WorkspaceProvidersRepository } from "./workspace-providers-repository.js";
+import type { WorkspaceTemplatesRepository } from "./workspace-templates-repository.js";
 
 // Non-UUID ids short-circuit to 404 before hitting Postgres, which would
 // otherwise raise a 22P02 (invalid uuid input) instead of a clean miss.
@@ -34,8 +40,14 @@ function notFound(res: { status: (code: number) => { json: (body: unknown) => un
  * workspaces they belong to — non-membership reads as 404 so foreign
  * workspace ids don't leak existence), PATCH /:id and DELETE /:id
  * (admin-only; delete is a soft delete via deletedAt).
+ * Also mounts sub-routers for members, providers, and templates.
  */
-export function createWorkspaceByIdRoutes(repo: WorkspaceRepository): Router {
+export function createWorkspaceByIdRoutes(
+  repo: WorkspaceRepository,
+  membersRepo: WorkspaceMembersRepository,
+  providersRepo: WorkspaceProvidersRepository,
+  templatesRepo: WorkspaceTemplatesRepository
+): Router {
   const router = Router();
 
   router.get("/:id", async (req, res, next) => {
@@ -169,6 +181,11 @@ export function createWorkspaceByIdRoutes(repo: WorkspaceRepository): Router {
       next(err);
     }
   });
+
+  // Mount nested resource routers in declared order: members → providers → templates.
+  router.use("/:id/members", createWorkspaceMembersRoutes(membersRepo, repo));
+  router.use("/:id/providers", createWorkspaceProvidersRoutes(providersRepo, repo));
+  router.use("/:id/templates", createWorkspaceTemplatesRoutes(templatesRepo, repo));
 
   return router;
 }

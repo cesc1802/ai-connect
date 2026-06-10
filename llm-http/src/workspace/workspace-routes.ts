@@ -5,6 +5,9 @@ import {
   SlugTakenError,
   type WorkspaceRepository,
 } from "./workspace-repository.js";
+import type { WorkspaceMembersRepository } from "./workspace-members-repository.js";
+import type { WorkspaceProvidersRepository } from "./workspace-providers-repository.js";
+import type { WorkspaceTemplatesRepository } from "./workspace-templates-repository.js";
 
 const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -33,7 +36,12 @@ function slugify(name: string): string {
     .replace(/-+$/, "");
 }
 
-export function createWorkspaceRoutes(repo: WorkspaceRepository): Router {
+export function createWorkspaceRoutes(
+  repo: WorkspaceRepository,
+  membersRepo: WorkspaceMembersRepository,
+  providersRepo: WorkspaceProvidersRepository,
+  templatesRepo: WorkspaceTemplatesRepository
+): Router {
   const router = Router();
 
   router.get("/", async (req, res, next) => {
@@ -119,7 +127,7 @@ export function createWorkspaceRoutes(repo: WorkspaceRepository): Router {
     }
   });
 
-  router.use(createWorkspaceByIdRoutes(repo));
+  router.use(createWorkspaceByIdRoutes(repo, membersRepo, providersRepo, templatesRepo));
 
   return router;
 }

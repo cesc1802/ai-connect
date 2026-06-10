@@ -56,11 +56,18 @@ import type {
 } from "@ai-connect/shared";
 import { createDbClient, type DbClient } from "@ai-connect/db";
 import { seedDrizzleDevData } from "./auth/seed-users.js";
+import { seedPromptTemplates } from "./workspace/seed-prompt-templates.js";
 import type { ActiveWorkspaceResolver } from "./workspace/active-workspace-resolver.js";
 import { InMemoryActiveWorkspaceResolver } from "./workspace/active-workspace-resolver.js";
 import { DrizzleActiveWorkspaceResolver } from "./workspace/drizzle-active-workspace-resolver.js";
 import type { WorkspaceRepository } from "./workspace/workspace-repository.js";
 import { DrizzleWorkspaceRepository } from "./workspace/drizzle-workspace-repository.js";
+import type { WorkspaceMembersRepository } from "./workspace/workspace-members-repository.js";
+import { DrizzleWorkspaceMembersRepository } from "./workspace/drizzle-workspace-members-repository.js";
+import type { WorkspaceProvidersRepository } from "./workspace/workspace-providers-repository.js";
+import { DrizzleWorkspaceProvidersRepository } from "./workspace/drizzle-workspace-providers-repository.js";
+import type { WorkspaceTemplatesRepository } from "./workspace/workspace-templates-repository.js";
+import { DrizzleWorkspaceTemplatesRepository } from "./workspace/drizzle-workspace-templates-repository.js";
 import { ChatHandler } from "./chat-v2/chat-handler.js";
 
 export interface AppContainer {
@@ -86,6 +93,9 @@ export interface AppContainer {
   msgRepo: MessageRepository;
   activeWorkspaceResolver: ActiveWorkspaceResolver;
   workspaceRepository: WorkspaceRepository;
+  workspaceMembersRepository: WorkspaceMembersRepository;
+  workspaceProvidersRepository: WorkspaceProvidersRepository;
+  workspaceTemplatesRepository: WorkspaceTemplatesRepository;
   dbClient: DbClient;
   chatHandler: ChatHandler;
 }
@@ -123,6 +133,9 @@ export async function buildContainer(
 
   const userRepository = new DrizzleUserRepository(dbClient);
   const workspaceRepository = new DrizzleWorkspaceRepository(dbClient);
+  const workspaceMembersRepository = new DrizzleWorkspaceMembersRepository(dbClient);
+  const workspaceProvidersRepository = new DrizzleWorkspaceProvidersRepository(dbClient);
+  const workspaceTemplatesRepository = new DrizzleWorkspaceTemplatesRepository(dbClient);
   const credentialsVerifier = new CredentialsVerifier(userRepository);
   const authService = new AuthService(
     credentialsVerifier,
@@ -192,6 +205,7 @@ export async function buildContainer(
     activeWorkspaceResolver = new DrizzleActiveWorkspaceResolver(dbClient);
     if (config.NODE_ENV !== "production") {
       await seedDrizzleDevData(dbClient);
+      await seedPromptTemplates(dbClient);
     }
   } else {
     const inMemoryConvRepo = new InMemoryConversationRepository();
@@ -226,6 +240,9 @@ export async function buildContainer(
     msgRepo,
     activeWorkspaceResolver,
     workspaceRepository,
+    workspaceMembersRepository,
+    workspaceProvidersRepository,
+    workspaceTemplatesRepository,
     dbClient,
     chatHandler,
   };
