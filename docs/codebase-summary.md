@@ -1,8 +1,8 @@
 # LLM Gateway - Codebase Summary
 
-**Last Updated:** April 17, 2026  
-**Current Version:** 1.0.0  
-**Project Type:** pnpm monorepo (4 packages)
+**Last Updated:** June 11, 2026  
+**Current Version:** 1.1.0  
+**Project Type:** pnpm monorepo (5 packages)
 
 ## Monorepo Structure
 
@@ -484,6 +484,10 @@ HTTP/WebSocket server providing REST API and real-time streaming interface to th
 **Files:**
 ```
 llm-http/src/
+├── providers/                    # Provider configuration from DB
+│   ├── db-provider-config-source.ts # Lazy-load DB source for gateway
+│   └── __tests__/               # Provider config tests
+│
 ├── auth/                         # Authentication layer
 │   ├── jwt-service.ts           # JWT signing/verification
 │   ├── credentials-verifier.ts  # Password verification
@@ -560,6 +564,20 @@ llm-http/src/
 - Rate limiting per IP (login endpoint)
 - Manual DI container (no framework)
 - Ports and adapters for testability
+- **Lazy-load provider config from DB** via `DbProviderConfigSource` (TTL refresh-on-use, diffs before swap, graceful in-flight protection)
+
+**Provider Configuration (Lazy Load):**
+- New `DbProviderConfigSource` in `llm-http/src/providers/`
+- Queries `providers` ⋈ `provider_catalogs` for enabled rows (keyed by catalog name)
+- Decrypts API keys via `ApiKeyVault` (AES-256-GCM using `PROVIDER_KEY_VAULT_KEY`)
+- Handles unsupported kinds (google, azure-openai, custom) with skip+warn
+- Deduplicates by kind (newest `updatedAt` wins, warns on duplicates)
+- Validates Ollama/MiniMax configs (requires baseUrl, warns on missing/corrupt/empty key)
+- Never logs plaintext key material
+- **TTL refresh:** default 60s (floored to 1s), refresh-on-use not polling
+- **Graceful swap:** config diff + unchanged providers keep circuit-breaker; displaced instances disposed after `streamIdleTimeoutMs`
+- **Error handling:** first load failure → CONFIG_SOURCE_ERROR; later failures → keep last good config + `onSourceError` callback
+- **Boot with zero providers:** non-fatal warning logged; chat fails gracefully until provider created
 
 **Event-Driven Architecture:**
 - EventBus pub/sub system for decoupled message flow
@@ -639,10 +657,10 @@ llm-http/src/
 - Member rows display username for both name and email (no email column)
 
 **Testing:**
-- 400+ tests passing (includes event-driven tests)
+- 400+ tests passing (includes event-driven tests, provider source tests)
 - 90%+ overall coverage
 - No vi.mock() - uses interface-based fakes
-- Test containers for all layers (auth, chat, workspace, events, transport)
+- Test containers for all layers (auth, chat, workspace, events, transport, providers)
 
 ---
 

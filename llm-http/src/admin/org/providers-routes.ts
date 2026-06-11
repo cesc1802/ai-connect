@@ -3,6 +3,7 @@ import { z } from "zod";
 import { PROVIDER_KINDS } from "./provider-kind.js";
 import {
   ProviderDuplicateNameError,
+  ProviderInUseError,
   ProviderNotFoundError,
   type OrgProvidersService,
   type ServiceActor,
@@ -10,19 +11,43 @@ import {
 
 const providerKindSchema = z.enum(PROVIDER_KINDS);
 
-const addProviderBody = z.object({
-  displayName: z.string().trim().min(1, "displayName is required").max(80),
-  providerKind: providerKindSchema,
-  apiKey: z.string().min(8, "apiKey must be at least 8 characters"),
-});
+const addProviderBody = z
+  .object({
+    displayName: z.string().trim().min(1, "displayName is required").max(80),
+    providerKind: providerKindSchema,
+    apiKey: z.string().min(8, "apiKey must be at least 8 characters").optional(),
+    baseUrl: z.string().trim().url("baseUrl must be a valid URL").max(2048).optional(),
+  })
+  .superRefine((v, ctx) => {
+    // ollama is key-less and self-hosted: baseUrl is its only address.
+    if (v.providerKind === "ollama") {
+      if (!v.baseUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["baseUrl"],
+          message: "baseUrl is required for ollama providers",
+        });
+      }
+    } else if (!v.apiKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["apiKey"],
+        message: "apiKey is required",
+      });
+    }
+  });
 
 const updateProviderBody = z
   .object({
     displayName: z.string().trim().min(1).max(80).optional(),
     isEnabled: z.boolean().optional(),
+    baseUrl: z.string().trim().url("baseUrl must be a valid URL").max(2048).optional(),
   })
   .refine(
-    (v) => v.displayName !== undefined || v.isEnabled !== undefined,
+    (v) =>
+      v.displayName !== undefined ||
+      v.isEnabled !== undefined ||
+      v.baseUrl !== undefined,
     { message: "No updatable fields supplied" },
   );
 
@@ -72,7 +97,10 @@ export function createOrgProvidersRoutes(
         res.status(status).json(body);
         return;
       }
-      const provider = await service.add(actor, parsed.data);
+      const provider = await service.add(actor, {
+        ...parsed.data,
+        apiKey: parsed.data.apiKey ?? "",
+      });
       res.status(201).json({ provider });
     } catch (err) {
       if (err instanceof ProviderDuplicateNameError) {
@@ -149,6 +177,10 @@ export function createOrgProvidersRoutes(
     } catch (err) {
       if (err instanceof ProviderNotFoundError) {
         res.status(404).json({ code: err.code, message: err.message });
+        return;
+      }
+      if (err instanceof ProviderInUseError) {
+        res.status(409).json({ code: err.code, message: err.message });
         return;
       }
       next(err);

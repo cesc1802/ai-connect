@@ -89,6 +89,32 @@ describe("validateConfig", () => {
     };
     expect(() => validateConfig(config)).toThrow("MiniMax API key is required");
   });
+
+  it("should pass with a source and no providers", () => {
+    const config: GatewayConfig = { source: { load: async () => ({}) } };
+    expect(() => validateConfig(config)).not.toThrow();
+  });
+
+  it("should throw when both providers and source are configured", () => {
+    const config: GatewayConfig = {
+      providers: { anthropic: { apiKey: "test-key" } },
+      source: { load: async () => ({}) },
+    };
+    expect(() => validateConfig(config)).toThrow(ValidationError);
+    expect(() => validateConfig(config)).toThrow(/not both/);
+  });
+
+  it("should throw when neither providers nor source is configured", () => {
+    expect(() => validateConfig({})).toThrow("At least one provider must be configured");
+  });
+
+  it("should not require defaultProvider to be configured in source mode", () => {
+    const config: GatewayConfig = {
+      source: { load: async () => ({}) },
+      defaultProvider: "anthropic",
+    };
+    expect(() => validateConfig(config)).not.toThrow();
+  });
 });
 
 describe("loadConfigFromEnv", () => {

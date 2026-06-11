@@ -3,6 +3,8 @@ import type {
   ChatResponse,
   StreamChunk,
   GatewayConfig,
+  ProviderConfig,
+  ProviderConfigSource,
   ProviderName,
   CircuitBreakerConfig,
   RetryConfig,
@@ -10,8 +12,11 @@ import type {
 import {
   mergeWithEnvConfig,
   validateConfig,
+  stableStringify,
   DEFAULT_TIMEOUT_MS,
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+  DEFAULT_REFRESH_TTL_MS,
+  MIN_REFRESH_TTL_MS,
   DEFAULT_CIRCUIT_BREAKER,
   DEFAULT_RETRY,
   PROVIDER_NAMES,
@@ -21,6 +26,9 @@ import {
 } from "./core/index.js";
 import type { LLMProvider } from "./providers/index.js";
 import { ProviderFactory } from "./factory/index.js";
+// Imported from the module, not the barrel: tests mock the factory barrel
+// with only ProviderFactory defined.
+import { instantiateProvider } from "./factory/provider-factory.js";
 // Side-effect import to register all providers with the factory
 import "./init.js";
 import { Router, RoundRobinStrategy } from "./routing/index.js";
@@ -53,6 +61,15 @@ export interface GatewayRequestOptions {
 }
 
 /**
+ * A displaced provider instance waiting out its disposal delay so in-flight
+ * streams that still hold it can finish.
+ */
+interface PendingDispose {
+  provider: LLMProvider;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+/**
  * LLMGateway - Main entry point for the SDK
  *
  * Integrates providers, routing, and resilience patterns into a unified API.
@@ -78,9 +95,27 @@ export class LLMGateway {
   private readonly factory: ProviderFactory;
   private readonly router: Router;
   private readonly circuitBreakers = new Map<ProviderName, CircuitBreaker>();
+  // Raw (unwrapped) instances — the gateway owns their disposal.
+  private readonly rawProviders = new Map<ProviderName, LLMProvider>();
+  private readonly circuitBreakerConfig: CircuitBreakerConfig;
   private readonly retryConfig: RetryConfig;
   private readonly timeoutMs: number;
   private readonly streamIdleTimeoutMs: number;
+
+  // Dynamic source mode (undefined in static-config mode)
+  private readonly source: ProviderConfigSource | undefined;
+  private readonly refreshTtlMs: number;
+  private readonly onSourceError: ((error: unknown) => void) | undefined;
+  private lastLoadedAt = 0;
+  private hasLoadedOnce = false;
+  private refreshInFlight: Promise<void> | null = null;
+  // Stable-serialized config per provider, for change detection across refreshes.
+  private readonly activeConfigs = new Map<ProviderName, string>();
+  // Displaced instances awaiting deferred disposal.
+  private readonly pendingDisposes = new Set<PendingDispose>();
+  // Set by dispose(); a refresh resolving afterwards must not repopulate
+  // the registry of a torn-down gateway.
+  private disposed = false;
 
   // Telemetry
   private readonly tracer: LLMTracer;
@@ -96,51 +131,181 @@ export class LLMGateway {
   private static readonly MAX_LATENCY_SAMPLES = 1000;
 
   constructor(config: GatewayConfig) {
-    // Merge with env config and validate
-    const mergedConfig = mergeWithEnvConfig(config);
+    // Source mode skips the env merge: the source is the single authority,
+    // and merging env vars would resurrect providers it removed.
+    const mergedConfig = config.source ? config : mergeWithEnvConfig(config);
     validateConfig(mergedConfig);
 
     // Store configs
     this.retryConfig = { ...DEFAULT_RETRY, ...config.retry };
     this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.streamIdleTimeoutMs = config.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS;
+    this.source = config.source;
+    // Number.isFinite rejects NaN/Infinity, which would slip past the clamp.
+    this.refreshTtlMs = Number.isFinite(config.refreshTtlMs)
+      ? Math.max(MIN_REFRESH_TTL_MS, config.refreshTtlMs as number)
+      : DEFAULT_REFRESH_TTL_MS;
+    this.onSourceError = config.onSourceError;
 
     // Initialize telemetry
     this.tracer = new LLMTracer(config.telemetry);
     this.metrics = new LLMMetrics(config.telemetry);
 
     // Create factory
-    this.factory = new ProviderFactory(mergedConfig.providers);
+    this.factory = new ProviderFactory(mergedConfig.providers ?? {});
 
-    // Create providers and wrap with circuit breakers
-    const cbConfig: CircuitBreakerConfig = {
+    this.circuitBreakerConfig = {
       ...DEFAULT_CIRCUIT_BREAKER,
       ...config.circuitBreaker,
     };
 
-    const providers = new Map<ProviderName, LLMProvider>();
-
-    for (const name of PROVIDER_NAMES) {
-      if (mergedConfig.providers[name]) {
-        try {
-          const rawProvider = this.factory.create(name);
-          const circuitBreaker = new CircuitBreaker(rawProvider, cbConfig);
-          this.circuitBreakers.set(name, circuitBreaker);
-          providers.set(name, circuitBreaker);
-        } catch {
-          // Provider not registered or config error, skip
-        }
-      }
-    }
-
-    // Create router with default strategy
+    // Create router with default strategy (before providers, so
+    // registerProvider can route-register each one as it is created)
     const strategy: IRoutingStrategy = new RoundRobinStrategy();
     this.router = new Router(
       mergedConfig.defaultProvider
         ? { strategy, defaultProvider: mergedConfig.defaultProvider }
         : { strategy }
     );
-    this.router.registerAll(providers);
+
+    // Create providers and wrap with circuit breakers (static mode; source
+    // mode starts empty and loads on first request)
+    const staticProviders = mergedConfig.providers ?? {};
+    for (const name of PROVIDER_NAMES) {
+      if (staticProviders[name]) {
+        try {
+          this.registerProvider(name, this.factory.create(name));
+        } catch {
+          // Provider not registered or config error, skip
+        }
+      }
+    }
+  }
+
+  /**
+   * Add a provider to the registry: wrap with a circuit breaker and make it
+   * routable. Replaces any existing registration under the same name.
+   */
+  private registerProvider(name: ProviderName, provider: LLMProvider): void {
+    const circuitBreaker = new CircuitBreaker(provider, this.circuitBreakerConfig);
+    this.rawProviders.set(name, provider);
+    this.circuitBreakers.set(name, circuitBreaker);
+    this.router.register(name, circuitBreaker);
+  }
+
+  /**
+   * Remove a provider from the registry and routing. Does NOT dispose the
+   * instance: it may still be serving in-flight requests — callers own the
+   * disposal policy.
+   */
+  private unregisterProvider(name: ProviderName): void {
+    this.router.unregister(name);
+    this.circuitBreakers.delete(name);
+    this.rawProviders.delete(name);
+  }
+
+  /**
+   * Source mode: re-sync the provider registry once the TTL has lapsed.
+   * Single-flight — concurrent requests share one load() no matter how many
+   * arrive while a refresh is running.
+   */
+  private async ensureFresh(): Promise<void> {
+    if (this.hasLoadedOnce && Date.now() - this.lastLoadedAt < this.refreshTtlMs) {
+      return;
+    }
+    if (!this.refreshInFlight) {
+      this.refreshInFlight = this.refreshFromSource().finally(() => {
+        this.refreshInFlight = null;
+      });
+    }
+    await this.refreshInFlight;
+  }
+
+  private async refreshFromSource(): Promise<void> {
+    if (!this.source || this.disposed) return;
+    try {
+      const loaded = await this.source.load();
+      // Shutdown may have raced the load; don't repopulate a disposed gateway.
+      if (this.disposed) return;
+      this.applyLoadedConfig(loaded);
+      this.hasLoadedOnce = true;
+      this.lastLoadedAt = Date.now();
+    } catch (error) {
+      if (!this.hasLoadedOnce) {
+        throw new LLMError(
+          "Failed to load provider configuration from source",
+          "CONFIG_SOURCE_ERROR",
+          error instanceof Error ? error : new Error(String(error))
+        );
+      }
+      // Keep serving the last good config. Stamp the load time so a down
+      // source is retried once per TTL window, not on every request.
+      this.lastLoadedAt = Date.now();
+      this.onSourceError?.(error);
+    }
+  }
+
+  /**
+   * Reconcile the running registry with a freshly loaded config. Unchanged
+   * providers keep their instance and circuit-breaker state; new ones are
+   * registered; changed ones are swapped in immediately while the displaced
+   * instance is disposed only after in-flight streams have had time to finish.
+   */
+  private applyLoadedConfig(loaded: ProviderConfig): void {
+    // Two-phase apply: instantiate every new/changed provider before touching
+    // the registry, so one failing constructor cannot leave a half-applied
+    // mix of old and new configs.
+    const swaps: { name: ProviderName; provider: LLMProvider; serialized: string }[] = [];
+    const removals: ProviderName[] = [];
+    try {
+      for (const name of PROVIDER_NAMES) {
+        const cfg = loaded[name];
+        if (cfg) {
+          const serialized = stableStringify(cfg);
+          if (serialized === this.activeConfigs.get(name)) continue;
+          swaps.push({ name, provider: instantiateProvider(name, cfg), serialized });
+        } else if (this.activeConfigs.has(name)) {
+          removals.push(name);
+        }
+      }
+    } catch (error) {
+      // Roll back: instances built for the aborted apply were never registered.
+      for (const { provider } of swaps) {
+        void provider.dispose();
+      }
+      throw error;
+    }
+
+    for (const { name, provider, serialized } of swaps) {
+      const displaced = this.rawProviders.get(name);
+      this.registerProvider(name, provider);
+      this.activeConfigs.set(name, serialized);
+      if (displaced) this.deferDispose(displaced);
+    }
+    for (const name of removals) {
+      const displaced = this.rawProviders.get(name);
+      this.unregisterProvider(name);
+      this.activeConfigs.delete(name);
+      if (displaced) this.deferDispose(displaced);
+    }
+  }
+
+  /**
+   * Dispose a displaced instance only after streamIdleTimeoutMs: streams
+   * started before a swap hold the old reference, and their idle timeout
+   * bounds how long they can possibly stay alive.
+   */
+  private deferDispose(provider: LLMProvider): void {
+    const entry: PendingDispose = {
+      provider,
+      timer: setTimeout(() => {
+        this.pendingDisposes.delete(entry);
+        void provider.dispose();
+      }, this.streamIdleTimeoutMs),
+    };
+    // Don't let a pending disposal pin the process open.
+    entry.timer.unref?.();
+    this.pendingDisposes.add(entry);
   }
 
   /**
@@ -148,6 +313,11 @@ export class LLMGateway {
    */
   async chat(request: ChatRequest, options?: GatewayRequestOptions): Promise<ChatResponse> {
     this.totalRequests++;
+
+    // Sync guard keeps static mode free of any async hop.
+    if (this.source) {
+      await this.ensureFresh();
+    }
 
     const provider = this.resolveProvider(request, options);
     // Normalize model name by stripping provider prefix (e.g., "minimax/MiniMax-M2.7" -> "MiniMax-M2.7")
@@ -204,6 +374,11 @@ export class LLMGateway {
     options?: GatewayRequestOptions
   ): AsyncIterable<StreamChunk> {
     this.totalRequests++;
+
+    // Sync guard keeps static mode free of any async hop.
+    if (this.source) {
+      await this.ensureFresh();
+    }
 
     const provider = this.resolveProvider(request, options);
     // Normalize model name by stripping provider prefix (e.g., "minimax/MiniMax-M2.7" -> "MiniMax-M2.7")
@@ -309,14 +484,37 @@ export class LLMGateway {
   }
 
   /**
-   * Dispose all resources
+   * Dispose all resources. The gateway's own registry is the source of truth
+   * for disposal: instances may be created outside the factory's cache.
    */
   async dispose(): Promise<void> {
-    await this.factory.disposeAll();
-    this.circuitBreakers.clear();
+    this.disposed = true;
+    // Flush deferred disposals now instead of waiting for their timers.
+    const pending = Array.from(this.pendingDisposes);
+    this.pendingDisposes.clear();
+    for (const entry of pending) {
+      clearTimeout(entry.timer);
+    }
+
+    const instances = [
+      ...Array.from(this.rawProviders.values()),
+      ...pending.map((entry) => entry.provider),
+    ];
+    // allSettled so one failing dispose cannot leak the others.
+    const results = await Promise.allSettled(instances.map((p) => p.dispose()));
+
+    for (const name of Array.from(this.rawProviders.keys())) {
+      this.unregisterProvider(name);
+    }
+    this.activeConfigs.clear();
     this.latencies = [];
     this.latencyIndex = 0;
     this.latencyCount = 0;
+
+    const failure = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+    if (failure) {
+      throw failure.reason;
+    }
   }
 
   /**

@@ -1,0 +1,1 @@
+ALTER TABLE "providers" ADD COLUMN "last_four" text DEFAULT '' NOT NULL;

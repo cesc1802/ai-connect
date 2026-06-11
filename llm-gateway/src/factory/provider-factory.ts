@@ -19,11 +19,38 @@ type ProviderConstructor<T extends ProviderName> = new (
   config: NonNullable<ProviderConfigMap[T]>
 ) => LLMProvider;
 
+// Module-level constructor registry shared by the factory's cached path and
+// the cache-free instantiateProvider path.
+const registry = new Map<ProviderName, ProviderConstructor<ProviderName>>();
+
+/**
+ * Instantiate a provider with an explicit config, bypassing the factory's
+ * per-name instance cache. Each call returns a fresh instance, so callers
+ * can re-create a provider with a different config at runtime.
+ */
+export function instantiateProvider<T extends ProviderName>(
+  name: T,
+  config: NonNullable<ProviderConfig[T]>
+): LLMProvider {
+  if (!PROVIDER_NAMES.includes(name)) {
+    throw new ValidationError(`Unknown provider: ${name}`, "provider");
+  }
+
+  const Constructor = registry.get(name);
+  if (!Constructor) {
+    throw new ValidationError(
+      `Provider '${name}' is not registered. Did you import it?`,
+      "provider"
+    );
+  }
+
+  return new Constructor(config);
+}
+
 /**
  * Factory for creating LLM provider instances
  */
 export class ProviderFactory {
-  private static registry = new Map<ProviderName, ProviderConstructor<ProviderName>>();
   private providers = new Map<ProviderName, LLMProvider>();
 
   /**
@@ -31,21 +58,21 @@ export class ProviderFactory {
    * Called at module load time for each provider
    */
   static register<T extends ProviderName>(name: T, constructor: ProviderConstructor<T>): void {
-    this.registry.set(name, constructor as ProviderConstructor<ProviderName>);
+    registry.set(name, constructor as ProviderConstructor<ProviderName>);
   }
 
   /**
    * Check if a provider is registered
    */
   static isRegistered(name: ProviderName): boolean {
-    return this.registry.has(name);
+    return registry.has(name);
   }
 
   /**
    * Get all registered provider names
    */
   static getRegisteredProviders(): ProviderName[] {
-    return Array.from(this.registry.keys());
+    return Array.from(registry.keys());
   }
 
   constructor(private readonly config: ProviderConfig) {}
@@ -65,9 +92,8 @@ export class ProviderFactory {
       throw new ValidationError(`Unknown provider: ${name}`, "provider");
     }
 
-    // Get constructor
-    const Constructor = ProviderFactory.registry.get(name);
-    if (!Constructor) {
+    // Validate registration
+    if (!registry.has(name)) {
       throw new ValidationError(
         `Provider '${name}' is not registered. Did you import it?`,
         "provider"
@@ -81,7 +107,7 @@ export class ProviderFactory {
     }
 
     // Create instance
-    const provider = new Constructor(providerConfig);
+    const provider = instantiateProvider(name, providerConfig);
     this.providers.set(name, provider);
 
     return provider;

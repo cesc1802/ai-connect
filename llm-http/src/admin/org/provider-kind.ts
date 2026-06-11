@@ -3,6 +3,8 @@ export const PROVIDER_KINDS = [
   "anthropic",
   "google",
   "azure-openai",
+  "ollama",
+  "minimax",
   "custom",
 ] as const;
 

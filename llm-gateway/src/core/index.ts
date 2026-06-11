@@ -50,9 +50,15 @@ export type {
 export {
   DEFAULT_TIMEOUT_MS,
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+  DEFAULT_REFRESH_TTL_MS,
+  MIN_REFRESH_TTL_MS,
   DEFAULT_CIRCUIT_BREAKER,
   DEFAULT_RETRY,
   loadConfigFromEnv,
   mergeWithEnvConfig,
   validateConfig,
 } from "./config.js";
+
+// Dynamic provider configuration
+export type { ProviderConfigSource } from "./provider-config-source.js";
+export { stableStringify } from "./stable-stringify.js";

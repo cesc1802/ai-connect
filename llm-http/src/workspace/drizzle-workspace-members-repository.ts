@@ -145,17 +145,31 @@ export class DrizzleWorkspaceMembersRepository
   }
 
   async remove(workspaceId: string, userId: string): Promise<boolean> {
-    // Deleting from userWorkspaces cascades to userRoleWorkspaces via FK.
-    const rows = await this.client.db
-      .delete(userWorkspaces)
-      .where(
-        and(
-          eq(userWorkspaces.userId, userId),
-          eq(userWorkspaces.workspaceId, workspaceId)
+    // userRoleWorkspaces has no FK to userWorkspaces (only to users and
+    // workspaces), so role rows must be deleted explicitly alongside the
+    // membership row.
+    return await this.client.db.transaction(async (tx) => {
+      const rows = await tx
+        .delete(userWorkspaces)
+        .where(
+          and(
+            eq(userWorkspaces.userId, userId),
+            eq(userWorkspaces.workspaceId, workspaceId)
+          )
         )
-      )
-      .returning({ userId: userWorkspaces.userId });
-    return rows.length > 0;
+        .returning({ userId: userWorkspaces.userId });
+      if (rows.length === 0) return false;
+
+      await tx
+        .delete(userRoleWorkspaces)
+        .where(
+          and(
+            eq(userRoleWorkspaces.userId, userId),
+            eq(userRoleWorkspaces.workspaceId, workspaceId)
+          )
+        );
+      return true;
+    });
   }
 
   async isMember(userId: string, workspaceId: string): Promise<boolean> {

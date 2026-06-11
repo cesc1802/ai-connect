@@ -36,16 +36,14 @@ const configSchema = z.object({
     .string()
     .default("http://localhost:5173")
     .transform((s) => s.split(",").map((o) => o.trim()).filter(Boolean)),
-  ANTHROPIC_API_KEY: z.string().optional(),
-  OPENAI_API_KEY: z.string().optional(),
-  OLLAMA_BASE_URL: z.string().url().optional(),
-  MINIMAX_API_KEY: z.string().optional(),
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
   JWT_EXPIRES_IN: z.string().default("1h"),
   DEMO_USERS: demoUsersSchema,
   RATE_LIMIT_LOGIN_WINDOW_MS: z.coerce.number().default(15 * 60 * 1000),
   RATE_LIMIT_LOGIN_MAX: z.coerce.number().default(5),
   PROVIDER_KEY_VAULT_KEY: z.string().optional(),
+  // How long the gateway serves the last DB-loaded provider set before re-checking.
+  PROVIDER_REFRESH_TTL_MS: z.coerce.number().int().positive().default(60_000),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -61,23 +59,4 @@ export function loadConfig(): Config {
     throw new Error(`Invalid environment configuration:\n${messages}`);
   }
   return result.data;
-}
-
-export function extractProviderConfigs(config: Config) {
-  const providers: Record<string, unknown> = {};
-
-  if (config.ANTHROPIC_API_KEY) {
-    providers.anthropic = { apiKey: config.ANTHROPIC_API_KEY };
-  }
-  if (config.OPENAI_API_KEY) {
-    providers.openai = { apiKey: config.OPENAI_API_KEY };
-  }
-  if (config.OLLAMA_BASE_URL) {
-    providers.ollama = { baseUrl: config.OLLAMA_BASE_URL };
-  }
-  if (config.MINIMAX_API_KEY) {
-    providers.minimax = { apiKey: config.MINIMAX_API_KEY };
-  }
-
-  return providers;
 }

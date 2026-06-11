@@ -27,9 +27,10 @@ pnpm --filter @ai-connect/http dev
 | `DEMO_USERS` | No | [] | JSON array of seeded users |
 | `RATE_LIMIT_LOGIN_WINDOW_MS` | No | 900000 | Login rate limit window (15 min) |
 | `RATE_LIMIT_LOGIN_MAX` | No | 5 | Max login attempts per window |
-| `ANTHROPIC_API_KEY` | No | - | Anthropic API key |
-| `OPENAI_API_KEY` | No | - | OpenAI API key |
-| `OLLAMA_BASE_URL` | No | http://localhost:11434 | Ollama server URL |
+| `PROVIDER_KEY_VAULT_KEY` | **Yes** (non-test) | - | 32-byte hex key encrypting stored provider API keys |
+| `PROVIDER_REFRESH_TTL_MS` | No | 60000 | Gateway provider config refresh interval (min 1000) |
+
+LLM providers are configured in the database via the org admin API (`/api/admin/org/providers`), not env vars. The gateway re-reads them once per `PROVIDER_REFRESH_TTL_MS` window, so admin changes apply without a restart.
 
 ### DEMO_USERS Format
 
@@ -176,7 +177,7 @@ interface AppContainer {
 
 - `ChatGatewayPort`: Interface for LLM operations
 - `LlmGatewayAdapter`: Production implementation wrapping llm-gateway
-- `NullGatewayAdapter`: Stub for development without providers
+- `DbProviderConfigSource`: Loads enabled providers from the database into the gateway
 
 ### Testing Strategy
 

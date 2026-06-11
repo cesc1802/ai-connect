@@ -1,8 +1,57 @@
 # LLM Gateway - Project Changelog
 
-**Last Updated:** June 10, 2026
+**Last Updated:** June 11, 2026
 
 This document records significant changes, features, and fixes across the LLM Gateway project.
+
+---
+
+## [Unreleased] - 2026-06-11
+
+### llm-gateway v1.1.0 (Feature Release)
+
+**Lazy-Load Provider Configuration with DB Source**
+
+Providers now load from the database on first request (lazy-load) instead of at boot time from environment variables. Enables zero-downtime provider updates without restart.
+
+- New `ProviderConfigSource` interface: pluggable config source with TTL refresh-on-use (default 60s, min 1s)
+- Config diffing: unchanged providers retain circuit-breaker state across refresh
+- Graceful swap: in-flight streams complete before provider disposal
+- Gateway now accepts `source` and `refreshTtlMs` in config (XOR with static `providers`)
+- First load failure → CONFIG_SOURCE_ERROR; later failures → keep last good config
+- `onSourceError` callback for custom error handling (e.g. logging)
+- Static config mode (SDK usage) unchanged for backward compatibility
+
+### llm-http v0.0.3 (Feature Release + **BREAKING CHANGES**)
+
+**Lazy-Load DB Provider Configuration**
+
+Providers are now seeded in the database via admin API; environment variables no longer used for gateway construction.
+
+**BREAKING DEPLOY CHANGE — Providers must be database-seeded before/after upgrade:**
+- ❌ Removed: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OLLAMA_BASE_URL`, `MINIMAX_API_KEY` env vars (no longer read by llm-http)
+- ✅ Required: `PROVIDER_KEY_VAULT_KEY` (32-byte hex) for AES-256-GCM decryption of provider secrets in DB
+- ✅ Required: `DATABASE_URL` for provider persistence
+- ✅ Optional: `PROVIDER_REFRESH_TTL_MS` (default 60000ms, floored at 1000ms for gateway)
+
+**Migration Path:**
+1. Seed providers to DB via org admin API before upgrading server
+2. Upgrade container with new code
+3. Server boots with DB source; chat routes to database-configured providers
+4. Delete any env vars from deployment config
+
+**New Features:**
+- `DbProviderConfigSource` in `llm-http/src/providers/db-provider-config-source.ts`
+- Single database query over `providers` ⋈ `provider_catalogs` (enabled rows)
+- Key decryption via existing `ApiKeyVault` (AES-256-GCM)
+- Smart skip+warn rules: unsupported kinds (google, azure-openai, custom); duplicates by kind → newest `updatedAt` wins; ollama without baseUrl; missing/corrupt/empty keys
+- Never logs key material
+- Container always builds with DB source; eager warm-up logs warning if zero providers exist at boot
+
+**Ops-Visible Changes:**
+- `GET /health` shows empty provider list until first chat request triggers lazy load
+- After provider changes via API, chat routes to new config within TTL (no restart needed)
+- DB outage after first successful load: gateway serves last known config
 
 ---
 
@@ -136,6 +185,8 @@ Core LLM provider abstraction with resilience patterns.
 
 | Date | Package | Version | Type | Summary |
 |------|---------|---------|------|---------|
+| 2026-06-11 | llm-gateway | 1.1.0 | Feature | ProviderConfigSource + TTL refresh + graceful swap |
+| 2026-06-11 | llm-http | 0.0.3 | Feature | **BREAKING** Lazy-load DB providers (env vars removed) |
 | 2026-06-10 | llm-http | 0.0.2 | Feature | Workspace paging & CRUD (GET/POST/PATCH/DELETE) |
 | 2026-06-10 | llm-ui | — | Feature | Workspace management screens & components |
 | 2026-04-17 | llm-http | 0.0.1 | Feature | Initial HTTP/WS server release |
@@ -146,11 +197,31 @@ Core LLM provider abstraction with resilience patterns.
 
 ## Migration Notes
 
-### From Development to Production (llm-http)
+### From v0.0.2 to v0.0.3 (llm-http) — Database-Sourced Providers
+
+**Before Upgrade:**
+1. Export existing providers from environment into a migration script (map ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
+2. Seed providers to DB using admin API: `POST /organizations/:orgId/providers` with provider details
+
+**During Upgrade:**
+1. Set `NODE_ENV=production` to enable trust proxy
+2. Use strong `JWT_SECRET` (min 32 chars)
+3. Set `DATABASE_URL` and `PROVIDER_KEY_VAULT_KEY` (32-byte hex for AES-256-GCM)
+4. **Remove** any `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OLLAMA_BASE_URL`, `MINIMAX_API_KEY` from environment
+5. Optional: `PROVIDER_REFRESH_TTL_MS` (default 60000ms)
+6. Set up reverse proxy (nginx/cloudflare) for TLS
+
+**After Upgrade:**
+1. First boot logs warning if zero providers in DB (non-fatal)
+2. Create/enable providers via admin API
+3. Chat routes to DB-configured providers within TTL (no restart needed)
+4. Health endpoint shows provider list after first chat request (lazy load)
+
+### From Development to Production
 
 1. Set `NODE_ENV=production` to enable trust proxy
 2. Use strong `JWT_SECRET` (min 32 chars)
-3. Configure LLM provider API keys
+3. Use secure `PROVIDER_KEY_VAULT_KEY` (generate 32-byte random hex)
 4. Set up reverse proxy (nginx/cloudflare) for TLS
 5. Consider Redis for distributed rate limiting (future)
 
@@ -158,4 +229,4 @@ Core LLM provider abstraction with resilience patterns.
 
 - `llm-db` package will provide `UserRepository` implementation
 - WebSocket auth may move from query param to first message
-- Refresh token mechanism planned for v1.1
+- Refresh token mechanism planned for v2.0

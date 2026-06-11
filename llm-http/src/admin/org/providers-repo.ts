@@ -9,6 +9,7 @@ export interface StoredProvider {
   isEnabled: boolean;
   encryptedKey: string;
   lastFour: string;
+  baseUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -19,6 +20,7 @@ export interface CreateProviderInput {
   providerKind: ProviderKind;
   encryptedKey: string;
   lastFour: string;
+  baseUrl?: string | undefined;
 }
 
 export interface UpdateProviderPatch {
@@ -26,6 +28,7 @@ export interface UpdateProviderPatch {
   isEnabled?: boolean | undefined;
   encryptedKey?: string | undefined;
   lastFour?: string | undefined;
+  baseUrl?: string | undefined;
 }
 
 export interface ProvidersRepository {
@@ -78,6 +81,7 @@ export class InMemoryProvidersRepository implements ProvidersRepository {
       isEnabled: true,
       encryptedKey: input.encryptedKey,
       lastFour: input.lastFour,
+      baseUrl: input.baseUrl ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -100,6 +104,7 @@ export class InMemoryProvidersRepository implements ProvidersRepository {
         encryptedKey: patch.encryptedKey,
       }),
       ...(patch.lastFour !== undefined && { lastFour: patch.lastFour }),
+      ...(patch.baseUrl !== undefined && { baseUrl: patch.baseUrl }),
       updatedAt: new Date().toISOString(),
     };
     this.rows.set(id, updated);

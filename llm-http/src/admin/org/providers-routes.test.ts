@@ -3,7 +3,7 @@ import type { Request, Response, NextFunction, Router } from "express";
 import type { AuditEmitter } from "@ai-connect/shared";
 import { ApiKeyVault } from "./api-key-vault.js";
 import { InMemoryProvidersRepository } from "./providers-repo.js";
-import { OrgProvidersService } from "./providers-service.js";
+import { OrgProvidersService, ProviderInUseError } from "./providers-service.js";
 import { createOrgProvidersRoutes } from "./providers-routes.js";
 import { createRequireOrgAdmin } from "../../auth/auth-middleware.js";
 
@@ -168,6 +168,89 @@ describe("Org Providers Routes", () => {
       await getHandler(router, "post", "/")(req, res, vi.fn());
       expect(res.status).toHaveBeenCalledWith(400);
     });
+
+    it("persists and returns baseUrl when provided", async () => {
+      const req = makeReq({
+        displayName: "OpenAI Proxy",
+        providerKind: "openai",
+        apiKey: "sk-proxy-key-1234",
+        baseUrl: "https://proxy.example.com/v1",
+      });
+      const res = makeRes();
+      await getHandler(router, "post", "/")(req, res, vi.fn());
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      const payload = (res.json as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+        provider: Record<string, unknown>;
+      };
+      expect(payload.provider.baseUrl).toBe("https://proxy.example.com/v1");
+    });
+
+    it("accepts ollama kind without apiKey when baseUrl present", async () => {
+      const req = makeReq({
+        displayName: "Local Ollama",
+        providerKind: "ollama",
+        baseUrl: "http://localhost:11434",
+      });
+      const res = makeRes();
+      await getHandler(router, "post", "/")(req, res, vi.fn());
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      const payload = (res.json as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+        provider: Record<string, unknown>;
+      };
+      expect(payload.provider).toMatchObject({
+        providerKind: "ollama",
+        hasKey: false,
+        lastFour: "",
+        baseUrl: "http://localhost:11434",
+      });
+    });
+
+    it("rejects ollama kind without baseUrl with 400", async () => {
+      const req = makeReq({
+        displayName: "Local Ollama",
+        providerKind: "ollama",
+      });
+      const res = makeRes();
+      await getHandler(router, "post", "/")(req, res, vi.fn());
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      const payload = (res.json as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+        code: string;
+      };
+      expect(payload.code).toBe("invalid_body");
+    });
+
+    it("rejects non-ollama kind without apiKey with 400", async () => {
+      const req = makeReq({
+        displayName: "MiniMax NoKey",
+        providerKind: "minimax",
+      });
+      const res = makeRes();
+      await getHandler(router, "post", "/")(req, res, vi.fn());
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it("accepts minimax kind with apiKey", async () => {
+      const req = makeReq({
+        displayName: "MiniMax",
+        providerKind: "minimax",
+        apiKey: "mm-secret-key-5678",
+      });
+      const res = makeRes();
+      await getHandler(router, "post", "/")(req, res, vi.fn());
+
+      expect(res.status).toHaveBeenCalledWith(201);
+      const payload = (res.json as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+        provider: Record<string, unknown>;
+      };
+      expect(payload.provider).toMatchObject({
+        providerKind: "minimax",
+        hasKey: true,
+        lastFour: "5678",
+      });
+    });
   });
 
   describe("PATCH /:id (update isEnabled / displayName)", () => {
@@ -271,6 +354,21 @@ describe("Org Providers Routes", () => {
 
       expect(res.status).toHaveBeenCalledWith(204);
       expect(res.send).toHaveBeenCalled();
+    });
+
+    it("returns 409 when provider is referenced by a workspace", async () => {
+      vi.spyOn(service, "delete").mockRejectedValueOnce(
+        new ProviderInUseError("prov-1"),
+      );
+      const req = makeReq(undefined, { id: "prov-1" });
+      const res = makeRes();
+      await getHandler(router, "delete", "/:id")(req, res, vi.fn());
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      const payload = (res.json as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+        code: string;
+      };
+      expect(payload.code).toBe("provider_in_use");
     });
   });
 

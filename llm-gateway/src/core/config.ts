@@ -1,4 +1,5 @@
 import type { ProviderName } from "./types.js";
+import type { ProviderConfigSource } from "./provider-config-source.js";
 import { ValidationError } from "./errors.js";
 
 /**
@@ -59,7 +60,17 @@ export interface RetryConfig {
  * Main gateway configuration
  */
 export interface GatewayConfig {
-  providers: ProviderConfig;
+  providers?: ProviderConfig;
+  // Dynamic provider configuration source. Mutually exclusive with static
+  // `providers`. In source mode env vars are NOT merged: the source is the
+  // single authority, and an env merge would resurrect providers it removed.
+  source?: ProviderConfigSource;
+  // Source mode only: re-read the source after this many ms (refresh-on-use,
+  // not a timer). Clamped to a 1s minimum.
+  refreshTtlMs?: number;
+  // Source mode only: invoked when a refresh fails after at least one
+  // successful load. The gateway keeps serving the last good config.
+  onSourceError?: (error: unknown) => void;
   defaultProvider?: ProviderName;
   timeoutMs?: number;
   // Per-chunk idle deadline for streaming. Resets each chunk; fires only if
@@ -84,6 +95,8 @@ export const DEFAULT_TIMEOUT_MS = 60_000;
 // Streaming idle gap. 5 minutes accommodates large-context cold starts and
 // slow time-to-first-token without masking truly hung streams.
 export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000;
+export const DEFAULT_REFRESH_TTL_MS = 60_000;
+export const MIN_REFRESH_TTL_MS = 1_000;
 
 export const DEFAULT_CIRCUIT_BREAKER: CircuitBreakerConfig = {
   failureThreshold: 5,
@@ -151,11 +164,13 @@ export function loadConfigFromEnv(): Partial<ProviderConfig> {
 /**
  * Merge configs with explicit config taking precedence over env
  */
-export function mergeWithEnvConfig(config: GatewayConfig): GatewayConfig {
+export function mergeWithEnvConfig(
+  config: GatewayConfig
+): GatewayConfig & { providers: ProviderConfig } {
   const envConfig = loadConfigFromEnv();
   // Filter out undefined provider entries from explicit config
   const explicitProviders = Object.fromEntries(
-    Object.entries(config.providers).filter(([, v]) => v !== undefined)
+    Object.entries(config.providers ?? {}).filter(([, v]) => v !== undefined)
   ) as ProviderConfig;
   return {
     ...config,
@@ -170,13 +185,27 @@ export function mergeWithEnvConfig(config: GatewayConfig): GatewayConfig {
  * Validate configuration
  */
 export function validateConfig(config: GatewayConfig): void {
-  const { providers, defaultProvider } = config;
+  const { providers, source, defaultProvider } = config;
+
+  const configuredProviders = providers
+    ? Object.keys(providers).filter((k) => providers[k as keyof ProviderConfig] !== undefined)
+    : [];
+
+  if (source && configuredProviders.length > 0) {
+    throw new ValidationError(
+      "Configure either static 'providers' or a dynamic 'source', not both",
+      "providers"
+    );
+  }
+
+  // Source mode: providers arrive later, so zero at boot is valid and the
+  // static checks below (including defaultProvider) do not apply.
+  if (source) {
+    return;
+  }
 
   // Must have at least one provider
-  const configuredProviders = Object.keys(providers).filter(
-    (k) => providers[k as keyof ProviderConfig] !== undefined
-  );
-  if (configuredProviders.length === 0) {
+  if (!providers || configuredProviders.length === 0) {
     throw new ValidationError("At least one provider must be configured", "providers");
   }
 

@@ -12,6 +12,7 @@ export const providers = pgTable(
     alias: text("alias").notNull(),
     baseUrl: text("base_url"),
     apiKeyRef: text("api_key_ref"),
+    lastFour: text("last_four").notNull().default(""),
     enabled: boolean("enabled").notNull().default(true),
     ...auditColumns,
   },

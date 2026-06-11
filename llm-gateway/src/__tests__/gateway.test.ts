@@ -551,4 +551,119 @@ describe("LLMGateway", () => {
       expect(gateway).toBeInstanceOf(LLMGateway);
     });
   });
+
+  describe("dynamic provider registry", () => {
+    // Private-method access for registry mutation tests; element access is
+    // the supported escape hatch and keeps the methods out of the public API.
+    type RegistryAccess = {
+      registerProvider(name: "anthropic" | "openai", provider: LLMProvider): void;
+      unregisterProvider(name: "anthropic" | "openai"): void;
+    };
+
+    function setupTwoProviderFactory(): {
+      anthropicProvider: LLMProvider;
+      openaiProvider: LLMProvider;
+    } {
+      const anthropicProvider = createMockProvider("anthropic");
+      const openaiProvider = createMockProvider("openai");
+      (ProviderFactory as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+        create: vi.fn().mockImplementation((name: string) => {
+          return name === "anthropic" ? anthropicProvider : openaiProvider;
+        }),
+        disposeAll: vi.fn().mockResolvedValue(undefined),
+      }));
+      return { anthropicProvider, openaiProvider };
+    }
+
+    it("dispose disposes every created provider exactly once", async () => {
+      const { anthropicProvider, openaiProvider } = setupTwoProviderFactory();
+
+      const gateway = new LLMGateway({
+        providers: {
+          anthropic: { apiKey: "key1" },
+          openai: { apiKey: "key2" },
+        },
+      });
+
+      await gateway.dispose();
+
+      expect(anthropicProvider.dispose).toHaveBeenCalledTimes(1);
+      expect(openaiProvider.dispose).toHaveBeenCalledTimes(1);
+      expect(gateway.getProviderNames()).toHaveLength(0);
+    });
+
+    it("unregisterProvider removes the provider from names, metrics and routing without disposing it", async () => {
+      const { anthropicProvider, openaiProvider } = setupTwoProviderFactory();
+      (anthropicProvider.chatCompletion as ReturnType<typeof vi.fn>).mockResolvedValue(
+        createTestResponse()
+      );
+
+      const gateway = new LLMGateway({
+        providers: {
+          anthropic: { apiKey: "key1" },
+          openai: { apiKey: "key2" },
+        },
+        defaultProvider: "anthropic",
+      });
+
+      (gateway as unknown as RegistryAccess).unregisterProvider("openai");
+
+      expect(gateway.getProviderNames()).not.toContain("openai");
+      expect(gateway.getMetrics().providers.map((p) => p.name)).not.toContain("openai");
+      expect(gateway.getProvider("openai")).toBeUndefined();
+      // In-flight streams may still hold the instance: no dispose on unregister.
+      expect(openaiProvider.dispose).not.toHaveBeenCalled();
+
+      // Requests explicitly targeting the removed provider fall back to routing.
+      const response = await gateway.chat(createTestRequest(), { provider: "openai" });
+      expect(response.content).toBe("Hello!");
+    });
+
+    it("registerProvider adds a runtime provider that is routable and disposed with the gateway", async () => {
+      const { openaiProvider } = setupTwoProviderFactory();
+      (openaiProvider.chatCompletion as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ...createTestResponse(),
+        content: "From OpenAI",
+      });
+
+      const gateway = new LLMGateway({
+        providers: {
+          anthropic: { apiKey: "key1" },
+        },
+        defaultProvider: "anthropic",
+      });
+
+      (gateway as unknown as RegistryAccess).registerProvider("openai", openaiProvider);
+
+      expect(gateway.getProviderNames()).toContain("openai");
+      expect(gateway.isProviderHealthy("openai")).toBe(true);
+
+      const response = await gateway.chat(createTestRequest(), { provider: "openai" });
+      expect(response.content).toBe("From OpenAI");
+
+      await gateway.dispose();
+      expect(openaiProvider.dispose).toHaveBeenCalledTimes(1);
+    });
+
+    it("characterization: two-provider construction yields stable names and metrics shape", () => {
+      setupTwoProviderFactory();
+
+      const gateway = new LLMGateway({
+        providers: {
+          anthropic: { apiKey: "key1" },
+          openai: { apiKey: "key2" },
+        },
+      });
+
+      expect(gateway.getProviderNames()).toEqual(["anthropic", "openai"]);
+
+      const metrics = gateway.getMetrics();
+      expect(metrics.providers.map((p) => p.name)).toEqual(["anthropic", "openai"]);
+      expect(metrics.providers.every((p) => p.healthy)).toBe(true);
+      expect(metrics.providers.every((p) => p.circuit.state === CircuitState.CLOSED)).toBe(true);
+      expect(metrics.totalRequests).toBe(0);
+      expect(metrics.totalErrors).toBe(0);
+      expect(metrics.averageLatencyMs).toBe(0);
+    });
+  });
 });

@@ -9,7 +9,7 @@ import type {
 } from "../../core/index.js";
 import { ValidationError } from "../../core/index.js";
 import { BaseProvider } from "../../providers/base-provider.js";
-import { ProviderFactory } from "../provider-factory.js";
+import { ProviderFactory, instantiateProvider } from "../provider-factory.js";
 
 // Mock provider for testing
 class MockAnthropicProvider extends BaseProvider {
@@ -220,6 +220,44 @@ describe("ProviderFactory", () => {
       const provider2 = factory.create("anthropic");
 
       expect(provider1).not.toBe(provider2);
+    });
+  });
+
+  describe("instantiateProvider", () => {
+    it("creates a provider with the explicit config", () => {
+      const provider = instantiateProvider("anthropic", {
+        apiKey: "explicit-key",
+        baseUrl: "https://explicit.api",
+      }) as MockAnthropicProvider;
+
+      expect(provider).toBeInstanceOf(MockAnthropicProvider);
+      expect(provider.testConfig.apiKey).toBe("explicit-key");
+      expect(provider.testConfig.baseUrl).toBe("https://explicit.api");
+    });
+
+    it("returns a fresh instance on every call (no cache)", () => {
+      const config = { apiKey: "test-key" };
+      const a = instantiateProvider("anthropic", config);
+      const b = instantiateProvider("anthropic", config);
+      expect(a).not.toBe(b);
+    });
+
+    it("is independent of any factory instance cache", () => {
+      const factory = new ProviderFactory({ anthropic: { apiKey: "factory-key" } });
+      const cached = factory.create("anthropic");
+      const standalone = instantiateProvider("anthropic", { apiKey: "other-key" });
+
+      expect(standalone).not.toBe(cached);
+      expect((standalone as MockAnthropicProvider).testConfig.apiKey).toBe("other-key");
+    });
+
+    it("throws for unregistered provider", () => {
+      expect(() => instantiateProvider("openai", { apiKey: "test-key" })).toThrow(
+        ValidationError
+      );
+      expect(() => instantiateProvider("openai", { apiKey: "test-key" })).toThrow(
+        /not registered/
+      );
     });
   });
 });

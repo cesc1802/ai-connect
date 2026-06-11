@@ -1,1 +1,1 @@
-export { ProviderFactory } from "./provider-factory.js";
+export { ProviderFactory, instantiateProvider } from "./provider-factory.js";

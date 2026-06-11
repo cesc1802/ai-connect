@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Router } from "../router.js";
+import { RoundRobinStrategy } from "../strategies/index.js";
 import type { IRoutingStrategy, ProviderInfo } from "../routing-strategy.js";
 import type { LLMProvider } from "../../providers/index.js";
 import type { ChatRequest, ProviderName, ProviderCapabilities } from "../../core/index.js";
@@ -160,6 +161,62 @@ describe("Router", () => {
       expect(selectCall).toBeDefined();
       const providersArg = selectCall![1] as ProviderInfo[];
       expect(providersArg.every((p) => p.name !== "anthropic")).toBe(true);
+    });
+  });
+
+  describe("dynamic registration with round-robin", () => {
+    let rrRouter: Router;
+    let providerA: LLMProvider;
+    let providerB: LLMProvider;
+    let providerC: LLMProvider;
+
+    beforeEach(() => {
+      rrRouter = new Router({ strategy: new RoundRobinStrategy() });
+      providerA = createMockProvider("anthropic");
+      providerB = createMockProvider("openai");
+      providerC = createMockProvider("ollama");
+      rrRouter.register("anthropic" as ProviderName, providerA);
+      rrRouter.register("openai" as ProviderName, providerB);
+    });
+
+    it("provider registered after construction becomes selectable", () => {
+      rrRouter.register("ollama" as ProviderName, providerC);
+
+      const selected = new Set<string>();
+      for (let i = 0; i < 9; i++) {
+        selected.add(rrRouter.selectProvider(createTestRequest()).name);
+      }
+      expect(selected).toContain("ollama");
+    });
+
+    it("unregister mid-rotation keeps selection working without the removed provider", () => {
+      rrRouter.register("ollama" as ProviderName, providerC);
+
+      // Advance the rotation so the internal counter is mid-cycle
+      rrRouter.selectProvider(createTestRequest());
+      rrRouter.selectProvider(createTestRequest());
+
+      rrRouter.unregister("openai" as ProviderName);
+
+      for (let i = 0; i < 10; i++) {
+        const selected = rrRouter.selectProvider(createTestRequest());
+        expect(selected.name).not.toBe("openai");
+      }
+    });
+
+    it("selection never returns an unregistered provider, even via explicit model prefix", () => {
+      rrRouter.unregister("openai" as ProviderName);
+
+      // Explicit provider prefix pointing at the removed provider must fall
+      // back to the remaining registered providers, not resolve stale state.
+      const result = rrRouter.selectProvider(createTestRequest("openai/gpt-4"));
+      expect(result.name).toBe("anthropic");
+    });
+
+    it("unregistering the last provider makes selection throw", () => {
+      rrRouter.unregister("anthropic" as ProviderName);
+      rrRouter.unregister("openai" as ProviderName);
+      expect(() => rrRouter.selectProvider(createTestRequest())).toThrow(ValidationError);
     });
   });
 });

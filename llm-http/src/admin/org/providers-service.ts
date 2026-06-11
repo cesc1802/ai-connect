@@ -15,6 +15,7 @@ export interface WireProvider {
   isEnabled: boolean;
   hasKey: boolean;
   lastFour: string;
+  baseUrl: string | null;
 }
 
 export interface ServiceActor {
@@ -26,11 +27,13 @@ export interface AddProviderInput {
   displayName: string;
   providerKind: ProviderKind;
   apiKey: string;
+  baseUrl?: string | undefined;
 }
 
 export interface UpdateProviderInput {
   displayName?: string | undefined;
   isEnabled?: boolean | undefined;
+  baseUrl?: string | undefined;
 }
 
 export interface RotateKeyInput {
@@ -51,6 +54,15 @@ export class ProviderNotFoundError extends Error {
   }
 }
 
+export class ProviderInUseError extends Error {
+  readonly code = "provider_in_use";
+  constructor(id: string) {
+    super(
+      `Provider ${id} is referenced by one or more workspaces and cannot be deleted.`,
+    );
+  }
+}
+
 function toWire(stored: StoredProvider): WireProvider {
   return {
     id: stored.id,
@@ -59,6 +71,7 @@ function toWire(stored: StoredProvider): WireProvider {
     isEnabled: stored.isEnabled,
     hasKey: stored.encryptedKey.length > 0,
     lastFour: stored.lastFour,
+    baseUrl: stored.baseUrl,
   };
 }
 
@@ -78,6 +91,10 @@ function diffForUpdate(
   if (before.isEnabled !== after.isEnabled) {
     beforeDiff.isEnabled = before.isEnabled;
     afterDiff.isEnabled = after.isEnabled;
+  }
+  if (before.baseUrl !== after.baseUrl) {
+    beforeDiff.baseUrl = before.baseUrl;
+    afterDiff.baseUrl = after.baseUrl;
   }
   return { before: beforeDiff, after: afterDiff };
 }
@@ -105,13 +122,16 @@ export class OrgProvidersService {
     );
     if (existing) throw new ProviderDuplicateNameError(input.displayName);
 
-    const encrypted = this.vault.encrypt(input.apiKey);
+    // Key-less providers (e.g. ollama) store an empty ref; routes enforce
+    // which kinds may omit the key.
+    const encrypted = input.apiKey ? this.vault.encrypt(input.apiKey) : "";
     const stored = await this.repo.create({
       orgId: actor.orgId,
       displayName: input.displayName,
       providerKind: input.providerKind,
       encryptedKey: encrypted,
-      lastFour: lastFourOf(input.apiKey),
+      lastFour: input.apiKey ? lastFourOf(input.apiKey) : "",
+      baseUrl: input.baseUrl,
     });
     const wire = toWire(stored);
     this.emitAudit({

@@ -1,11 +1,10 @@
-import { LLMGateway } from "llm-gateway";
+import { LLMGateway, type ProviderConfigSource } from "llm-gateway";
 import type { AuditEmitter } from "@ai-connect/shared";
 import type { Config } from "./config.js";
-import { extractProviderConfigs } from "./config.js";
 import type { Logger } from "./logger.js";
 import type { ChatGatewayPort } from "./chat-v2/chat-gateway-port.js";
 import { LlmGatewayAdapter } from "./chat-v2/llm-gateway-adapter.js";
-import { NullGatewayAdapter } from "./chat-v2/null-gateway-adapter.js";
+import { DbProviderConfigSource } from "./providers/db-provider-config-source.js";
 import type { UserRepository } from "./auth/user-repository.js";
 import { DrizzleUserRepository } from "./auth/drizzle-user-repository.js";
 import { CredentialsVerifier } from "./auth/credentials-verifier.js";
@@ -23,7 +22,7 @@ import {
 import { InMemoryOrgTemplateRepo } from "./admin/org/templates-repo.js";
 import { OrgTemplateService } from "./admin/org/templates-service.js";
 import { ApiKeyVault } from "./admin/org/api-key-vault.js";
-import { InMemoryProvidersRepository } from "./admin/org/providers-repo.js";
+import { DrizzleProvidersRepository } from "./admin/org/drizzle-providers-repo.js";
 import { OrgProvidersService } from "./admin/org/providers-service.js";
 import {
   InMemoryWsMembersRepository,
@@ -110,25 +109,6 @@ export async function buildContainer(
   config: Config,
   logger: Logger
 ): Promise<AppContainer> {
-  const providers = extractProviderConfigs(config);
-  const hasProviders = Object.keys(providers).length > 0;
-
-  if (!hasProviders && config.NODE_ENV === "production") {
-    throw new Error("At least one LLM provider must be configured in production");
-  }
-
-  let chatGateway: ChatGatewayPort;
-
-  if (hasProviders) {
-    const gateway = new LLMGateway({ providers });
-    chatGateway = new LlmGatewayAdapter(gateway);
-  } else {
-    logger.warn("No LLM providers configured - chat functionality will be unavailable");
-    chatGateway = new NullGatewayAdapter();
-  }
-
-  const jwtService = new JwtService(config.JWT_SECRET, config.JWT_EXPIRES_IN);
-
   // The user repository is always Postgres-backed, so a DB connection is required
   // to boot regardless of PERSISTENCE (which only selects conversation/message repos).
   const databaseUrl = process.env.DATABASE_URL ?? "";
@@ -136,6 +116,25 @@ export async function buildContainer(
     throw new Error("DATABASE_URL is required");
   }
   const dbClient = createDbClient({ url: databaseUrl, poolMax: 10 });
+
+  const apiKeyVault = new ApiKeyVault({
+    PROVIDER_KEY_VAULT_KEY: config.PROVIDER_KEY_VAULT_KEY,
+    NODE_ENV: config.NODE_ENV,
+  });
+
+  // Providers come from the database, not env vars: the gateway re-reads them
+  // through this source once per TTL window, so admin changes apply live.
+  const providerConfigSource = new DbProviderConfigSource(dbClient, apiKeyVault, logger);
+  await warmUpProviderSource(providerConfigSource, logger);
+  const gateway = new LLMGateway({
+    source: providerConfigSource,
+    refreshTtlMs: config.PROVIDER_REFRESH_TTL_MS,
+    onSourceError: (error) =>
+      logger.error({ error }, "Provider config refresh failed; serving the last loaded providers"),
+  });
+  const chatGateway: ChatGatewayPort = new LlmGatewayAdapter(gateway);
+
+  const jwtService = new JwtService(config.JWT_SECRET, config.JWT_EXPIRES_IN);
 
   const userRepository = new DrizzleUserRepository(dbClient);
   const workspaceRepository = new DrizzleWorkspaceRepository(dbClient);
@@ -160,11 +159,7 @@ export async function buildContainer(
   );
   const orgTemplateRepo = new InMemoryOrgTemplateRepo();
   const orgTemplateService = new OrgTemplateService(orgTemplateRepo, auditEmitter);
-  const apiKeyVault = new ApiKeyVault({
-    PROVIDER_KEY_VAULT_KEY: config.PROVIDER_KEY_VAULT_KEY,
-    NODE_ENV: config.NODE_ENV,
-  });
-  const orgProvidersRepo = new InMemoryProvidersRepository();
+  const orgProvidersRepo = new DrizzleProvidersRepository(dbClient);
   const orgProvidersService = new OrgProvidersService(
     orgProvidersRepo,
     apiKeyVault,
@@ -255,6 +250,30 @@ export async function buildContainer(
     dbClient,
     chatHandler,
   };
+}
+
+/**
+ * Eagerly load the provider source once at boot so an empty providers table
+ * or an unreachable database is visible in the logs immediately. Never fatal:
+ * the gateway retries through its own TTL refresh on the first chat request.
+ */
+export async function warmUpProviderSource(
+  source: ProviderConfigSource,
+  logger: Logger
+): Promise<void> {
+  try {
+    const initial = await source.load();
+    if (Object.keys(initial).length === 0) {
+      logger.warn(
+        "No enabled LLM providers in the database - chat is unavailable until one is added"
+      );
+    }
+  } catch (error) {
+    logger.warn(
+      { error },
+      "Provider config could not be loaded at boot; the gateway retries on the first chat request"
+    );
+  }
 }
 
 function seedWsMembers(): Map<string, WsMemberRow[]> {

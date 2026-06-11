@@ -172,6 +172,33 @@ const response = await gateway.chat({
 }
 ```
 
+### Dynamic Provider Source
+
+Instead of a static `providers` map, the gateway can load provider configuration from a pluggable source (e.g. a database) and pick up changes at runtime:
+
+```typescript
+import { LLMGateway, type ProviderConfigSource } from "llm-gateway";
+
+const source: ProviderConfigSource = {
+  async load() {
+    // Return the full set of enabled providers in one call
+    return { anthropic: { apiKey: "..." }, openai: { apiKey: "..." } };
+  },
+};
+
+const gateway = new LLMGateway({
+  source,
+  refreshTtlMs: 60_000, // re-check on use after this TTL (default 60s)
+  onSourceError: (err) => console.error("provider refresh failed", err),
+});
+```
+
+Behavior:
+- `providers` and `source` are mutually exclusive; in source mode env vars are **not** merged.
+- Providers load on first request and refresh on use after `refreshTtlMs` (single-flight: concurrent requests share one load).
+- Unchanged providers keep their instance and circuit-breaker state; changed ones are swapped in immediately while the old instance is disposed after `streamIdleTimeoutMs`, so in-flight streams finish cleanly.
+- If a refresh fails after the first successful load, the gateway keeps serving the last good config and calls `onSourceError`.
+
 ## Resilience Features
 
 ### Circuit Breaker

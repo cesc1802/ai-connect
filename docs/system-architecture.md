@@ -1,7 +1,7 @@
 # LLM Gateway - System Architecture
 
-**Last Updated:** April 19, 2026  
-**Version:** 1.2.0
+**Last Updated:** June 11, 2026  
+**Version:** 1.3.0
 
 ## High-Level Architecture
 
@@ -841,7 +841,7 @@ HTTP Response
 
 | Route | Method | Auth | Rate Limit | Handler | Status |
 |-------|--------|------|-----------|---------|--------|
-| `/health` | GET | No | No | Health check endpoint | ✅ |
+| `/health` | GET | No | No | Health check endpoint (empty provider list until first chat request triggers lazy load) | ✅ |
 | `/auth/login` | POST | No | Yes (IP) | Login with credentials | ✅ |
 | `/auth` | * | No | No | Auth routes | ✅ |
 | `/workspaces` | GET | User | No | List workspaces (paginated, role-aware) | ✅ |
@@ -852,6 +852,23 @@ HTTP Response
 - Trust proxy: Enabled (respects X-Forwarded-For header)
 - JSON limit: 1MB
 - Rate limiter uses Trust Proxy for accurate IP detection in reverse proxy scenarios
+
+**Provider Configuration (Lazy Load via DB):**
+
+Providers are no longer configured via environment variables. Instead, the gateway uses a `DbProviderConfigSource` that:
+1. **Lazy loads from database** on first request (not boot time)
+2. **Queries** `providers` ⋈ `provider_catalogs` for all enabled rows
+3. **Decrypts keys** via `ApiKeyVault` (AES-256-GCM) using `PROVIDER_KEY_VAULT_KEY`
+4. **Refreshes on TTL** (default 60s, min 1s) — refresh-on-use, not polling
+5. **Diffs configs** before swap — unchanged providers keep circuit-breaker state
+6. **Gracefully replaces** providers — displaced instances disposed after in-flight streams drain
+7. **Handles DB outage** — keeps last good config; logs via `onSourceError` callback
+
+**Setup Workflow:**
+- Boot app with empty DB (warns at startup, chat fails gracefully)
+- Use admin API to create provider: `POST /organizations/:orgId/providers` with name, kind, baseUrl, apiKey
+- After ≤ TTL, provider is routable without restart
+- `GET /health` shows empty list until first chat request triggers load
 
 ---
 
@@ -1186,17 +1203,26 @@ export interface AppContainer {
 1. Load configuration
    - NODE_ENV, JWT_SECRET, JWT_EXPIRES_IN
    - DEMO_USERS (user seed data)
-   - Provider configs for LLM Gateway
+   - PROVIDER_KEY_VAULT_KEY (AES-256-GCM key for decrypting provider secrets)
+   - PROVIDER_REFRESH_TTL_MS (optional, default 60000ms)
 
-2. Instantiate LLM Gateway (if providers configured)
+2. Instantiate Postgres database client
+   - Connect to DATABASE_URL
+   - Create ApiKeyVault for key decryption
+
+3. Instantiate LLM Gateway with DbProviderConfigSource
+   - source: DbProviderConfigSource (lazy-loads from DB via providers ⋈ provider_catalogs)
+   - refreshTtlMs: PROVIDER_REFRESH_TTL_MS
+   - onSourceError callback → log refresh failures
+   - Non-fatal boot warning if zero providers in DB
    - Wrap with LlmGatewayAdapter
 
-3. Instantiate auth services
+4. Instantiate auth services
    - Create UserRepository from seed data
    - Create CredentialsVerifier with repository
    - Create JwtService with secret and expiration
 
-4. Return container with all services
+5. Return container with all services
 ```
 
 **Service Dependencies:**
@@ -1254,14 +1280,19 @@ Container
 | `DEMO_USERS` | string (JSON) | No | "[]" | Initial user seed data as JSON array |
 | `RATE_LIMIT_LOGIN_WINDOW_MS` | number | No | 900000 | Login rate limit window (15 minutes) |
 | `RATE_LIMIT_LOGIN_MAX` | number | No | 5 | Max login attempts per window |
+| `DATABASE_URL` | string | Yes | - | PostgreSQL connection string (postgres://...) |
+| `PROVIDER_KEY_VAULT_KEY` | string | Yes (non-test) | - | 32-byte hex key for AES-256-GCM decryption of provider API keys |
+| `PROVIDER_REFRESH_TTL_MS` | number | No | 60000 | Gateway provider config refresh interval (min 1000ms) |
 
-**Authentication Environment Variables:**
+**Authentication & Database Environment Variables:**
 
 | Variable | Type | Required | Description |
 |----------|------|----------|-------------|
 | `JWT_SECRET` | string | Yes | Secret key for HS256 signing (min 32 chars recommended) |
 | `JWT_EXPIRES_IN` | string | No | Token expiration format (default: "1h") |
 | `DEMO_USERS` | string (JSON) | No | Initial user seed data as JSON array |
+| `DATABASE_URL` | string | Yes | PostgreSQL connection string (postgres://...) |
+| `PROVIDER_KEY_VAULT_KEY` | string | Yes (non-test) | 32-byte hex AES-256-GCM key for provider secret decryption |
 
 **Example Configuration:**
 
@@ -1276,15 +1307,17 @@ JWT_SECRET="your-secret-key-at-least-32-characters-long"
 JWT_EXPIRES_IN="1h"
 DEMO_USERS='[{"id":"user-1","username":"demo","passwordHash":"$2a$10$..."}]'
 
+# Database configuration (providers now sourced from DB)
+DATABASE_URL="postgres://user:password@localhost:5432/llm-gateway"
+PROVIDER_KEY_VAULT_KEY="0123456789abcdef0123456789abcdef"  # 32 bytes hex
+PROVIDER_REFRESH_TTL_MS=60000                                # 60 seconds
+
 # Rate limiting (optional - defaults shown)
 RATE_LIMIT_LOGIN_WINDOW_MS=900000      # 15 minutes
 RATE_LIMIT_LOGIN_MAX=5
 
-# LLM Provider configuration (if using gateway)
-ANTHROPIC_API_KEY="sk-ant-..."
-OPENAI_API_KEY="sk-..."
-OLLAMA_BASE_URL="http://localhost:11434"
-MINIMAX_API_KEY="..."
+# NOTE: Provider API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
+# are no longer read by llm-http. Seed providers via admin API instead.
 ```
 
 ---
