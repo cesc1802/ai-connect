@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PROVIDER_KINDS } from "../admin/org/provider-kind.js";
+import { PROVIDER_KINDS } from "./provider-kind.js";
 
 const providerKindSchema = z.enum(PROVIDER_KINDS);
 const scopeSchema = z.enum(["org", "select"]);

@@ -43,6 +43,13 @@
       "when": 1781172525713,
       "tag": "0005_provider_default_model_scope_catalog_seed",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1781189253003,
+      "tag": "0006_conversation_template_id",
+      "breakpoints": true
     }
   ]
 }

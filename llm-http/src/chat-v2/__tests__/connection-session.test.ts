@@ -31,6 +31,12 @@ function createMockDeps(bus: EventBus<ChatEvent>): ConnectionSessionDeps {
     activeWorkspaceResolver: {
       getForUser: vi.fn().mockResolvedValue({ id: "ws-test", slug: "dev", name: "Dev" }),
     } as unknown as ConnectionSessionDeps["activeWorkspaceResolver"],
+    workspaceMembersRepository: {
+      isMember: vi.fn().mockResolvedValue(true),
+    } as unknown as ConnectionSessionDeps["workspaceMembersRepository"],
+    workspaceTemplatesRepository: {
+      listForWorkspace: vi.fn().mockResolvedValue([]),
+    } as unknown as ConnectionSessionDeps["workspaceTemplatesRepository"],
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as ConnectionSessionDeps["logger"],
   };
 }
@@ -119,6 +125,117 @@ describe("ConnectionSession", () => {
           ]),
         }));
       });
+    });
+
+    it("creates conversation in explicit workspace when caller is a member", async () => {
+      const WS_UUID = "550e8400-e29b-41d4-a716-446655440010";
+      const TEMPLATE_UUID = "550e8400-e29b-41d4-a716-446655440011";
+      const newConv: Conversation = { id: "conv-new", workspaceId: WS_UUID, userId: user.id, templateId: TEMPLATE_UUID, createdAt: 1000, updatedAt: 1000 };
+      vi.mocked(deps.convRepo.create).mockResolvedValue(newConv);
+      vi.mocked(deps.msgRepo.listByConversation).mockResolvedValue([]);
+      vi.mocked(deps.workspaceTemplatesRepository.listForWorkspace).mockResolvedValue([
+        { id: TEMPLATE_UUID } as Awaited<ReturnType<typeof deps.workspaceTemplatesRepository.listForWorkspace>>[number],
+      ]);
+
+      const session = new ConnectionSession(ws, user, deps);
+      session.start("conn-1");
+
+      ws.emit("message", JSON.stringify({
+        type: "c.chat.send",
+        workspaceId: WS_UUID,
+        templateId: TEMPLATE_UUID,
+        model: "gpt-4",
+        messages: [{ role: "user", content: "hello" }],
+      }));
+
+      await vi.waitFor(() => {
+        expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "chat.requested" }));
+      });
+
+      expect(deps.workspaceMembersRepository.isMember).toHaveBeenCalledWith(user.id, WS_UUID);
+      expect(deps.convRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceId: WS_UUID,
+        templateId: TEMPLATE_UUID,
+        userId: user.id,
+      }));
+      expect(deps.activeWorkspaceResolver.getForUser).not.toHaveBeenCalled();
+    });
+
+    it("sends forbidden when caller is not a member of explicit workspace", async () => {
+      const WS_UUID = "550e8400-e29b-41d4-a716-446655440010";
+      vi.mocked(deps.workspaceMembersRepository.isMember).mockResolvedValue(false);
+
+      const session = new ConnectionSession(ws, user, deps);
+      session.start("conn-1");
+
+      ws.emit("message", JSON.stringify({
+        type: "c.chat.send",
+        workspaceId: WS_UUID,
+        model: "gpt-4",
+        messages: [{ role: "user", content: "hello" }],
+      }));
+
+      await vi.waitFor(() => {
+        expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('"code":"forbidden"'));
+      });
+      expect(deps.convRepo.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects templateId not attached to the target workspace", async () => {
+      const WS_UUID = "550e8400-e29b-41d4-a716-446655440010";
+      const TEMPLATE_UUID = "550e8400-e29b-41d4-a716-446655440011";
+      vi.mocked(deps.workspaceTemplatesRepository.listForWorkspace).mockResolvedValue([]);
+
+      const session = new ConnectionSession(ws, user, deps);
+      session.start("conn-1");
+
+      ws.emit("message", JSON.stringify({
+        type: "c.chat.send",
+        workspaceId: WS_UUID,
+        templateId: TEMPLATE_UUID,
+        model: "gpt-4",
+        messages: [{ role: "user", content: "hello" }],
+      }));
+
+      await vi.waitFor(() => {
+        expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('"code":"invalid_template"'));
+      });
+      expect(deps.convRepo.create).not.toHaveBeenCalled();
+    });
+
+    it("forwards only the newest client message on top of stored history", async () => {
+      const conv: Conversation = { id: CONV_UUID, workspaceId: "ws-test", userId: user.id, createdAt: 1000, updatedAt: 1000 };
+      const history: Message[] = [
+        { id: "msg-1", conversationId: CONV_UUID, role: "user", content: "prev message", createdAt: 900 },
+        { id: "msg-2", conversationId: CONV_UUID, role: "assistant", content: "prev reply", createdAt: 901 },
+      ];
+      vi.mocked(deps.convRepo.get).mockResolvedValue(conv);
+      vi.mocked(deps.msgRepo.listByConversation).mockResolvedValue(history);
+
+      const session = new ConnectionSession(ws, user, deps);
+      session.start("conn-1");
+
+      // Client resends its full local transcript; stored turns must not double up.
+      ws.emit("message", JSON.stringify({
+        type: "c.chat.send",
+        conversationId: CONV_UUID,
+        model: "gpt-4",
+        messages: [
+          { role: "user", content: "prev message" },
+          { role: "assistant", content: "prev reply" },
+          { role: "user", content: "new message" },
+        ],
+      }));
+
+      await vi.waitFor(() => {
+        expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "chat.requested" }));
+      });
+
+      const publishCall = publishSpy.mock.calls.find(
+        (call) => (call[0] as ChatEvent).type === "chat.requested"
+      );
+      const messages = (publishCall?.[0] as { messages: Array<{ content: string }> }).messages;
+      expect(messages.map((m) => m.content)).toEqual(["prev message", "prev reply", "new message"]);
     });
 
     it("sends not_found error when conversation does not exist", async () => {

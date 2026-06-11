@@ -409,7 +409,7 @@ export type ServerV2Message =
 
 ## Repositories
 
-**ConversationRepository** (`repositories/in-memory-conversation-repo.ts`)
+**ConversationRepository** (`conversations/drizzle-conversation-repository.ts`)
 
 ```typescript
 interface ConversationRepository {
@@ -427,7 +427,7 @@ interface Conversation {
 }
 ```
 
-**MessageRepository** (`repositories/in-memory-message-repo.ts`)
+**MessageRepository** (`conversations/drizzle-message-repository.ts`)
 
 ```typescript
 interface MessageRepository {

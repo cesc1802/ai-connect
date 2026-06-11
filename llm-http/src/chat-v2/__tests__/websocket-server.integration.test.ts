@@ -3,9 +3,11 @@ import { createServer, type Server } from "node:http";
 import { WebSocket } from "ws";
 import { EventBus } from "../../events/event-bus.js";
 import { LocalConnectionRegistry } from "../../transport/local-connection-registry.js";
-import { InMemoryConversationRepository } from "../../repositories/in-memory-conversation-repo.js";
-import { InMemoryMessageRepository } from "../../repositories/in-memory-message-repo.js";
-import { InMemoryActiveWorkspaceResolver } from "../../workspace/active-workspace-resolver.js";
+import {
+  InMemoryConversationRepository,
+  InMemoryMessageRepository,
+  InMemoryActiveWorkspaceResolver,
+} from "./in-memory-chat-test-fakes.js";
 import { ChatHandler } from "../chat-handler.js";
 import { attachChatV2Server, type V2ServerDeps, type V2WebSocketHandle } from "../websocket-server.js";
 import type { ChatEvent } from "@ai-connect/shared";
@@ -83,6 +85,12 @@ describe("attachChatV2Server integration", () => {
       convRepo,
       msgRepo,
       activeWorkspaceResolver: new InMemoryActiveWorkspaceResolver(),
+      workspaceMembersRepository: {
+        isMember: vi.fn().mockResolvedValue(true),
+      } as unknown as V2ServerDeps["workspaceMembersRepository"],
+      workspaceTemplatesRepository: {
+        listForWorkspace: vi.fn().mockResolvedValue([]),
+      } as unknown as V2ServerDeps["workspaceTemplatesRepository"],
       logger: mockLogger,
     });
 

@@ -1,142 +1,248 @@
-import { useEffect, useMemo, useState } from "react";
-import { Icon } from "@/lib/icons";
-import { PROVIDERS, CONVERSATIONS } from "@/lib/mock-data";
-import { useChatStore } from "@/lib/chat-context";
-import { useChatSocket } from "@/hooks/use-chat-socket";
-import { getToken, getWsUrl } from "@/lib/auth-token";
-import { MessageList } from "@/components/chat/message-list";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChatRail } from "@/components/chat/rail/chat-rail";
+import { EmptyConversation } from "@/components/chat/rail/empty-conversation";
 import { Composer } from "@/components/chat/composer";
-import { StreamingControls } from "@/components/chat/streaming-controls";
-import { ChatHistoryList } from "@/components/chat/chat-history-list";
+import { ConversationHeader } from "@/components/chat/conversation-header";
+import { MessageList } from "@/components/chat/message-list";
+import { NewChatDialog } from "@/components/chat/new-chat-dialog";
+import { SocketIndicator } from "@/components/chat/socket-indicator";
+import { useChatSocket } from "@/hooks/use-chat-socket";
+import { useTransientChatError } from "@/hooks/use-transient-chat-error";
+import { getToken, getWsUrl } from "@/lib/auth-token";
+import { useChatStore } from "@/lib/chat-context";
+import type { Msg } from "@/lib/chat-types";
+import {
+  getConversationMessages,
+  listMyConversations,
+  type ConversationSummary,
+  type WireMessage,
+} from "@/lib/conversations-api";
+import { getMyDefaultModel } from "@/lib/my-default-model-api";
+import { listMyWorkspaces, type MyWorkspace } from "@/lib/my-workspaces-api";
+import { listAttachedTemplates, type PromptTemplate } from "@/lib/workspace-templates-api";
 
-const ALL_MODELS = PROVIDERS.map((p) => p.model);
+function toMsg(m: WireMessage): Msg {
+  return { localId: m.id, role: m.role, text: m.content, toolCalls: [], status: "complete" };
+}
+
+function mostRecentIn(conversations: ConversationSummary[], wsId: string): ConversationSummary | undefined {
+  return conversations
+    .filter((c) => c.workspaceId === wsId)
+    .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+}
 
 export function ChatScreen() {
-  const [model, setModel] = useState(ALL_MODELS[0] ?? "");
-  const [selectedConvoId, setSelectedConvoId] = useState<string | null>(null);
+  const [memberships, setMemberships] = useState<MyWorkspace[]>([]);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [templates, setTemplates] = useState<PromptTemplate[]>([]);
+  const [defaultModel, setDefaultModel] = useState<string | null>(null);
+  const [activeWsId, setActiveWsId] = useState<string | null>(null);
+  const [activeConvId, setActiveConvId] = useState<string | null>(null);
+  // Template picked for a not-yet-persisted conversation; the server creates
+  // the conversation on first send.
+  const [draftTemplateId, setDraftTemplateId] = useState<string | null>(null);
+  const [newOpen, setNewOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const token = useMemo(() => getToken(), []);
   const wsUrl = useMemo(() => getWsUrl(), []);
-  const { send, abort, socketState } = useChatSocket({ url: wsUrl, token });
-  const { state } = useChatStore();
+  const { state, dispatch } = useChatStore();
 
-  const lastFailed = useMemo(() => findLastError(state.messages), [state.messages]);
-  const errorBanner = useTransientError(lastFailed);
+  const { send, abort, socketState } = useChatSocket({
+    url: wsUrl,
+    token,
+    onConversationCreated: (conv) => {
+      setConversations((cs) => [
+        {
+          id: conv.id,
+          workspaceId: conv.workspaceId,
+          title: conv.title ?? "",
+          templateId: conv.templateId ?? null,
+          createdAt: conv.createdAt,
+          updatedAt: conv.updatedAt,
+        },
+        ...cs,
+      ]);
+      setActiveConvId(conv.id);
+      setDraftTemplateId(null);
+    },
+  });
 
-  const selectedConvo = useMemo(
-    () => (selectedConvoId ? CONVERSATIONS.find((c) => c.id === selectedConvoId) : null),
-    [selectedConvoId],
+  const errorBanner = useTransientChatError(state.messages);
+
+  // Guards against a slow history fetch landing after the user has already
+  // switched to another conversation.
+  const activeConvIdRef = useRef<string | null>(null);
+  const openConversation = useCallback(
+    (id: string) => {
+      abort(); // no-op when idle — stops a stream left running in the previous thread
+      setActiveConvId(id);
+      setDraftTemplateId(null);
+      activeConvIdRef.current = id;
+      getConversationMessages(id)
+        .then((msgs) => {
+          if (activeConvIdRef.current !== id) return;
+          dispatch({ type: "LOAD_HISTORY", messages: msgs.map(toMsg) });
+        })
+        .catch(() => {
+          if (activeConvIdRef.current !== id) return;
+          dispatch({ type: "LOAD_HISTORY", messages: [] });
+        });
+    },
+    [abort, dispatch],
   );
 
+  const clearThread = useCallback(() => {
+    abort();
+    activeConvIdRef.current = null;
+    dispatch({ type: "LOAD_HISTORY", messages: [] });
+  }, [abort, dispatch]);
+
+  useEffect(() => {
+    let cancelled = false;
+    // allSettled: a failing default-model lookup must not blank the rail,
+    // and vice versa — each slice degrades independently.
+    Promise.allSettled([listMyWorkspaces(), listMyConversations(), getMyDefaultModel()])
+      .then(([ws, convs, model]) => {
+        if (cancelled) return;
+        const memberships = ws.status === "fulfilled" ? ws.value : [];
+        const conversations = convs.status === "fulfilled" ? convs.value : [];
+        setMemberships(memberships);
+        setConversations(conversations);
+        if (model.status === "fulfilled") setDefaultModel(model.value);
+        const first = memberships[0];
+        if (first) {
+          setActiveWsId(first.id);
+          const recent = mostRecentIn(conversations, first.id);
+          if (recent) openConversation(recent.id);
+        }
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [openConversation]);
+
+  useEffect(() => {
+    if (!activeWsId) return;
+    let cancelled = false;
+    listAttachedTemplates(activeWsId)
+      .then((list) => {
+        if (!cancelled) setTemplates(list);
+      })
+      .catch(() => {
+        if (!cancelled) setTemplates([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWsId]);
+
+  const templatesById = useMemo(() => new Map(templates.map((t) => [t.id, t])), [templates]);
+  const activeWorkspace = memberships.find((m) => m.id === activeWsId) ?? null;
+  const activeConv = activeConvId ? conversations.find((c) => c.id === activeConvId) ?? null : null;
+  const template = activeConv
+    ? activeConv.templateId
+      ? templatesById.get(activeConv.templateId)
+      : undefined
+    : draftTemplateId
+      ? templatesById.get(draftTemplateId)
+      : undefined;
+  const title = activeConv
+    ? activeConv.title || template?.title || "Trò chuyện"
+    : template?.title ?? "Trò chuyện mới";
+
+  function switchWorkspace(wsId: string) {
+    setActiveWsId(wsId);
+    setDraftTemplateId(null);
+    const recent = mostRecentIn(conversations, wsId);
+    if (recent) openConversation(recent.id);
+    else {
+      setActiveConvId(null);
+      clearThread();
+    }
+  }
+
+  function startChat(wsId: string, templateId: string) {
+    setNewOpen(false);
+    setActiveWsId(wsId);
+    setActiveConvId(null);
+    setDraftTemplateId(templateId);
+    clearThread();
+  }
+
   function handleSend(text: string) {
-    if (!model.trim()) return;
-    send({ text, model });
+    if (!defaultModel) return;
+    if (activeConvId) {
+      send({ text, model: defaultModel, conversationId: activeConvId });
+      setConversations((cs) => cs.map((c) => (c.id === activeConvId ? { ...c, updatedAt: Date.now() } : c)));
+    } else if (activeWsId && draftTemplateId) {
+      send({ text, model: defaultModel, workspaceId: activeWsId, templateId: draftTemplateId });
+    }
+  }
+
+  if (!loading && memberships.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center p-8">
+        <p className="max-w-sm text-center text-sm text-muted-foreground">
+          Bạn chưa thuộc workspace nào. Hãy liên hệ quản trị viên để được thêm vào một workspace.
+        </p>
+      </div>
+    );
   }
 
   return (
-    <div className="flex h-full">
-      <ChatHistoryList selectedId={selectedConvoId} onSelect={setSelectedConvoId} />
+    <div className="flex h-full overflow-hidden">
+      {activeWorkspace && (
+        <ChatRail
+          memberships={memberships}
+          activeWorkspace={activeWorkspace}
+          conversations={conversations}
+          templatesById={templatesById}
+          activeConversationId={activeConvId}
+          onSelectWorkspace={switchWorkspace}
+          onSelectConversation={openConversation}
+          onNewChat={() => setNewOpen(true)}
+        />
+      )}
+      {newOpen && activeWorkspace && (
+        <NewChatDialog workspace={activeWorkspace} onPick={startChat} onClose={() => setNewOpen(false)} />
+      )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center gap-2 border-b bg-card/40 px-4 py-2.5">
-          <Icon name="message-square" className="h-4 w-4 text-muted-foreground" />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium">
-              {selectedConvo ? selectedConvo.title : "Trò chuyện mới"}
-            </p>
-            {selectedConvo && (
-              <p className="truncate text-2xs text-muted-foreground">
-                {selectedConvo.msgCount} tin nhắn · cập nhật {selectedConvo.updatedLabel}
-              </p>
+        {!activeWorkspace || (!activeConv && !draftTemplateId) ? (
+          activeWorkspace && <EmptyConversation workspace={activeWorkspace} onNew={() => setNewOpen(true)} />
+        ) : (
+          <>
+            <ConversationHeader title={title} workspace={activeWorkspace} template={template} />
+            {!defaultModel && !loading && (
+              <div className="border-b bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
+                Chưa có model khả dụng — bật một provider có API key và model mặc định.
+              </div>
             )}
-          </div>
-          <SocketIndicator state={socketState} hasToken={!!token} />
-          <div className="ml-auto flex items-center gap-2">
-            <Icon name="sliders-horizontal" className="h-3.5 w-3.5 text-muted-foreground" />
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className="h-7 rounded-md border bg-background px-2 text-xs outline-none"
-            >
-              {ALL_MODELS.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {errorBanner && (
-          <div className="border-b bg-destructive/10 px-4 py-2 text-xs text-destructive">
-            Lỗi từ máy chủ ({errorBanner.errorCode}): {errorBanner.errorMessage}
-          </div>
+            {errorBanner && (
+              <div className="border-b bg-destructive/10 px-4 py-2 text-xs text-destructive">
+                Lỗi từ máy chủ ({errorBanner.errorCode}): {errorBanner.errorMessage}
+              </div>
+            )}
+            <div className="flex justify-end px-4 pt-2 empty:hidden">
+              <SocketIndicator state={socketState} hasToken={!!token} />
+            </div>
+            <MessageList template={template} />
+            <Composer
+              workspace={activeWorkspace}
+              template={template ?? null}
+              templates={templates}
+              templateRequired={!activeConv}
+              canSend={!!defaultModel}
+              socketState={socketState}
+              onSend={handleSend}
+              onPickTemplate={activeConv ? undefined : (id) => setDraftTemplateId(id)}
+              onAbort={abort}
+            />
+          </>
         )}
-
-        <MessageList />
-
-        <div className="relative">
-          <StreamingControls onAbort={abort} />
-          <Composer
-            model={model}
-            socketState={socketState}
-            onSend={handleSend}
-          />
-        </div>
       </div>
     </div>
   );
-}
-
-function SocketIndicator({
-  state,
-  hasToken,
-}: {
-  state: ReturnType<typeof useChatSocket>["socketState"];
-  hasToken: boolean;
-}) {
-  if (!hasToken) {
-    return (
-      <span className="ml-2 rounded-full bg-amber-500/15 px-2 py-0.5 text-2xs text-amber-700 dark:text-amber-400">
-        Thiếu dev token — đặt VITE_DEV_JWT
-      </span>
-    );
-  }
-  if (state === "open") return null;
-  const label =
-    state === "connecting"
-      ? "Đang kết nối…"
-      : state === "reconnecting"
-        ? "Đang kết nối lại…"
-        : state === "permanent-closed"
-          ? "Mất kết nối"
-          : "Chưa kết nối";
-  return (
-    <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-2xs text-muted-foreground">
-      {label}
-    </span>
-  );
-}
-
-function findLastError(messages: ReturnType<typeof useChatStore>["state"]["messages"]) {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if (m.status === "error") return m;
-  }
-  return undefined;
-}
-
-// 5-second transient banner: surfaces the most recent SERVER_FAILED, then
-// auto-dismisses. Re-arms when a *new* error message appears.
-function useTransientError(
-  msg:
-    | ReturnType<typeof useChatStore>["state"]["messages"][number]
-    | undefined,
-) {
-  const [shown, setShown] = useState<typeof msg>(undefined);
-  useEffect(() => {
-    if (!msg) return;
-    setShown(msg);
-    const t = setTimeout(() => setShown(undefined), 5000);
-    return () => clearTimeout(t);
-  }, [msg?.localId, msg?.errorCode]);
-  return shown;
 }

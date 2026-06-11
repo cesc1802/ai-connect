@@ -1,4 +1,4 @@
-import type { ProviderKind } from "../admin/org/provider-kind.js";
+import type { ProviderKind } from "./provider-kind.js";
 
 export interface CheckTarget {
   providerKind: ProviderKind;

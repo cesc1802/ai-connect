@@ -30,7 +30,7 @@ pnpm --filter @ai-connect/http dev
 | `PROVIDER_KEY_VAULT_KEY` | **Yes** (non-test) | - | 32-byte hex key encrypting stored provider API keys |
 | `PROVIDER_REFRESH_TTL_MS` | No | 60000 | Gateway provider config refresh interval (min 1000) |
 
-LLM providers are configured in the database via the org admin API (`/api/admin/org/providers`), not env vars. The gateway re-reads them once per `PROVIDER_REFRESH_TTL_MS` window, so admin changes apply without a restart.
+LLM providers are configured in the database via the org admin API (`/providers`), not env vars. The gateway re-reads them once per `PROVIDER_REFRESH_TTL_MS` window, so admin changes apply without a restart.
 
 ### DEMO_USERS Format
 

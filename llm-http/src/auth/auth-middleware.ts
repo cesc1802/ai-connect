@@ -60,17 +60,3 @@ export function createRequireOrgAdmin(): RequestHandler {
     next();
   };
 }
-
-export function createRequireWorkspaceAdmin(): RequestHandler {
-  return (req, res, next) => {
-    const role = req.user?.workspaceRole;
-    if (role !== "owner" && role !== "admin") {
-      res.status(403).json({
-        code: "role_required",
-        message: "Forbidden",
-      });
-      return;
-    }
-    next();
-  };
-}

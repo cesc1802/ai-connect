@@ -146,6 +146,36 @@ describe("chat-reducer", () => {
     expect(s.status).toBe("idle");
   });
 
+  it("SERVER_ERROR faults the in-flight draft even before SERVER_STARTED", () => {
+    let s = send(initialChatState, "L1");
+    s = chatReducer(s, {
+      type: "SERVER_ERROR",
+      code: "invalid_template",
+      message: "Template is not attached to this workspace",
+    });
+    expect(s.messages[1].status).toBe("error");
+    expect(s.messages[1].errorCode).toBe("invalid_template");
+    expect(s.activeLocalId).toBeNull();
+    expect(s.status).toBe("idle");
+  });
+
+  it("SERVER_ERROR faults a streaming draft", () => {
+    let s = send(initialChatState, "L1");
+    s = started(s, "R1");
+    s = chatReducer(s, { type: "SERVER_ERROR", code: "internal", message: "boom" });
+    expect(s.messages[1].status).toBe("error");
+    expect(s.activeRequestId).toBeNull();
+  });
+
+  it("SERVER_ERROR with no in-flight send is a no-op", () => {
+    const s = chatReducer(initialChatState, {
+      type: "SERVER_ERROR",
+      code: "forbidden",
+      message: "Cannot abort unowned request",
+    });
+    expect(s).toEqual(initialChatState);
+  });
+
   it("SERVER_ABORTED marks draft aborted with reason=user", () => {
     let s = send(initialChatState, "L1");
     s = started(s, "R1");

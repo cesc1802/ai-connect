@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { providers, providerCatalogs, type DbClient } from "@ai-connect/db";
 import { PROVIDER_NAMES, type ProviderConfig, type ProviderConfigSource, type ProviderName } from "llm-gateway";
 import type { Logger } from "../logger.js";
-import type { ApiKeyVault } from "../admin/org/api-key-vault.js";
+import type { ApiKeyVault } from "./api-key-vault.js";
 
 /** Enabled provider row joined with its catalog kind, as needed by load(). */
 export interface EnabledProviderRow {

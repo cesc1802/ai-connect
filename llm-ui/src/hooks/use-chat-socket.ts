@@ -4,6 +4,7 @@ import {
   type ChatV2ClientState,
 } from "../lib/ws-client";
 import type {
+  ChatV2Conversation,
   ChatV2InboundEvent,
   ServerV2Message,
 } from "../lib/chat-v2-protocol";
@@ -21,12 +22,18 @@ export interface UseChatSocketOptions {
   // null = no auth yet — hook does not connect until a token is supplied.
   token: string | null;
   onParseError?: (raw: string, err: unknown) => void;
+  // Fired when the server persists a brand-new conversation for this send.
+  onConversationCreated?: (conversation: ChatV2Conversation) => void;
 }
 
 export interface SendParams {
   text: string;
   model: string;
   conversationId?: string;
+  // New-conversation seeding: which workspace it lives in and which
+  // prompt template started it. Ignored when conversationId is set.
+  workspaceId?: string;
+  templateId?: string;
 }
 
 export interface ChatSocketApi {
@@ -52,6 +59,11 @@ export function useChatSocket(opts: UseChatSocketOptions): ChatSocketApi {
     onParseErrorRef.current = opts.onParseError;
   }, [opts.onParseError]);
 
+  const onConversationCreatedRef = useRef(opts.onConversationCreated);
+  useEffect(() => {
+    onConversationCreatedRef.current = opts.onConversationCreated;
+  }, [opts.onConversationCreated]);
+
   useEffect(() => {
     if (!opts.token) {
       setSocketState("idle");
@@ -62,7 +74,12 @@ export function useChatSocket(opts: UseChatSocketOptions): ChatSocketApi {
       token: opts.token,
       onStateChange: setSocketState,
       onParseError: (raw, err) => onParseErrorRef.current?.(raw, err),
-      onMessage: (ev) => routeInbound(ev, client, stateRef.current, dispatch),
+      onMessage: (ev) => {
+        if (ev.type === "s.conversation.created") {
+          onConversationCreatedRef.current?.(ev.conversation);
+        }
+        routeInbound(ev, client, stateRef.current, dispatch);
+      },
     });
     clientRef.current = client;
     client.connect();
@@ -83,6 +100,8 @@ export function useChatSocket(opts: UseChatSocketOptions): ChatSocketApi {
       client.send({
         type: "c.chat.send",
         conversationId: params.conversationId,
+        workspaceId: params.workspaceId,
+        templateId: params.templateId,
         model: params.model,
         messages: [...history, { role: "user", content: params.text }],
       });
@@ -164,13 +183,13 @@ function mapServerEventToAction(ev: ServerV2Message): ChatAction | null {
         requestId: ev.requestId,
         reason: ev.reason,
       };
+    case "s.error":
+      return { type: "SERVER_ERROR", code: ev.code, message: ev.message };
     case "s.chat.started":
     case "s.conversation.created":
-    case "s.error":
     case "s.pong":
-      // Handled elsewhere or out of scope for the reducer (Phase 6 picks
-      // up conversation.created; transport handles pong; s.error is
-      // surfaced via logger for now).
+      // Handled elsewhere: started/conversation.created are intercepted
+      // before routing; the transport handles pong.
       return null;
   }
 }

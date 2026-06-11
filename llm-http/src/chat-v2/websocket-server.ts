@@ -6,6 +6,8 @@ import type { JwtService } from "../auth/jwt-service.js";
 import type { EventBus } from "../events/event-bus.js";
 import type { ConnectionRegistry } from "../transport/connection-registry.js";
 import type { ActiveWorkspaceResolver } from "../workspace/active-workspace-resolver.js";
+import type { WorkspaceMembersRepository } from "../workspace/workspace-members-repository.js";
+import type { WorkspaceTemplatesRepository } from "../workspace/workspace-templates-repository.js";
 import type { Logger } from "../logger.js";
 import type { ChatHandler } from "./chat-handler.js";
 import { authenticateUpgrade } from "../ws/ws-upgrade-auth.js";
@@ -26,6 +28,8 @@ export interface V2ServerDeps {
   convRepo: ConversationRepository;
   msgRepo: MessageRepository;
   activeWorkspaceResolver: ActiveWorkspaceResolver;
+  workspaceMembersRepository: WorkspaceMembersRepository;
+  workspaceTemplatesRepository: WorkspaceTemplatesRepository;
   logger: Logger;
 }
 
@@ -70,6 +74,8 @@ export function attachChatV2Server(httpServer: Server, deps: V2ServerDeps): V2We
       convRepo: deps.convRepo,
       msgRepo: deps.msgRepo,
       activeWorkspaceResolver: deps.activeWorkspaceResolver,
+      workspaceMembersRepository: deps.workspaceMembersRepository,
+      workspaceTemplatesRepository: deps.workspaceTemplatesRepository,
       logger: deps.logger,
     });
     session.start(connectionId);

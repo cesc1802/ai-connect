@@ -10,9 +10,19 @@ export interface WorkspaceMember {
   orgRole: string;
 }
 
+export interface WorkspaceMembership {
+  workspaceId: string;
+  slug: string;
+  name: string;
+  /** Zero or more workspace roles the user holds in this workspace. */
+  roles: WsRole[];
+}
+
 export interface WorkspaceMembersRepository {
   /** List all members of a workspace with their roles. */
   list(workspaceId: string): Promise<WorkspaceMember[]>;
+  /** List every workspace the user belongs to, with the roles they hold there. */
+  listMembershipsForUser(userId: string): Promise<WorkspaceMembership[]>;
   /**
    * List org users who are NOT yet members of the workspace.
    * Used to populate the Add Member candidate list.

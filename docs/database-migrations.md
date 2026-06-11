@@ -200,12 +200,11 @@ After drift check passes:
 
 ```bash
 pnpm db:migrate                          # Apply pending migrations to test database
-pnpm -r test                             # Run all tests with PERSISTENCE=drizzle
+pnpm -r test                             # Run all tests against the migrated database
 ```
 
 **Env variables set in CI:**
 - `DATABASE_URL=postgres://ai_connect:ai_connect_ci@localhost:5432/ai_connect`
-- `PERSISTENCE=drizzle` — Enables Drizzle-backed repos in chat v2
 
 **Services:**
 - `postgres:16-alpine` container spins up with health checks
@@ -315,7 +314,6 @@ Files are applied in **numeric order only** — do not rename or reorder files.
 | `DATABASE_URL` | string | Yes | — | Postgres connection string |
 | `DATABASE_POOL_MAX` | number | No | 10 | Max connection pool size |
 | `POSTGRES_PORT` | number | No | 5432 | Local Postgres port override (docker-compose only) |
-| `PERSISTENCE` | string | No | in-memory | Set to `drizzle` to enable DB backing in llm-http |
 
 ---
 

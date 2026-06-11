@@ -1,14 +1,14 @@
 import { Router, type NextFunction, type Request, type RequestHandler, type Response } from "express";
 import type { ZodSchema } from "zod";
-import type { ApiKeyVault } from "../admin/org/api-key-vault.js";
-import type { ProvidersRepository } from "../admin/org/providers-repo.js";
+import type { ApiKeyVault } from "./api-key-vault.js";
+import type { ProvidersRepository } from "./providers-repository.js";
 import {
   ProviderDuplicateNameError,
   ProviderInUseError,
   ProviderNotFoundError,
   type OrgProvidersService,
   type ServiceActor,
-} from "../admin/org/providers-service.js";
+} from "./providers-service.js";
 import {
   checkConnection,
   type CheckTarget,
@@ -60,8 +60,7 @@ function statusForError(err: unknown): { status: number; code: string } | null {
 
 /**
  * Org-admin `/providers` resource: CRUD + key rotation + live connection
- * check + provider catalog. Reuses the same OrgProvidersService instance as
- * the `/admin/org/providers` mount; both surfaces stay in sync by design.
+ * check + provider catalog.
  */
 export function createProvidersRoutes(deps: ProvidersRoutesDeps): Router {
   const { service, repo, vault } = deps;

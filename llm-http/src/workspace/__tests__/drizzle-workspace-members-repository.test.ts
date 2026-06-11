@@ -139,4 +139,33 @@ runIf("DrizzleWorkspaceMembersRepository", () => {
     const members = await repo.list(wsId);
     expect(members).toEqual([]);
   });
+
+  it("listMembershipsForUser returns workspaces with roles, name-ordered, excluding soft-deleted", async () => {
+    const wsAlpha = await seedWorkspace("alpha");
+    const wsBeta = await seedWorkspace("beta");
+    const wsGone = await seedWorkspace("gone");
+    await repo.add(wsBeta, TEST_USER_A, ["pm", "dev"]);
+    await repo.add(wsAlpha, TEST_USER_A, []);
+    await repo.add(wsGone, TEST_USER_A, ["qa"]);
+    await client.db
+      .update(workspaces)
+      .set({ deletedAt: new Date() })
+      .where(eq(workspaces.id, wsGone));
+
+    const memberships = await repo.listMembershipsForUser(TEST_USER_A);
+    const scoped = memberships.filter((m) =>
+      m.slug.startsWith(SLUG_PREFIX)
+    );
+
+    expect(scoped.map((m) => m.workspaceId)).toEqual([wsAlpha, wsBeta]);
+    expect(scoped[0]!.roles).toEqual([]);
+    expect(scoped[1]!.roles.sort()).toEqual(["dev", "pm"]);
+  });
+
+  it("listMembershipsForUser returns empty array for user with no memberships", async () => {
+    const memberships = await repo.listMembershipsForUser(TEST_USER_B);
+    expect(
+      memberships.filter((m) => m.slug.startsWith(SLUG_PREFIX))
+    ).toEqual([]);
+  });
 });

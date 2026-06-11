@@ -1,6 +1,7 @@
 import { pgTable, uuid, text, index } from "drizzle-orm/pg-core";
 import { users } from "./users.js";
 import { workspaces } from "./workspaces.js";
+import { promptTemplates } from "./prompt-templates.js";
 import { auditColumns } from "./_audit-columns.js";
 
 export const conversations = pgTable(
@@ -14,6 +15,10 @@ export const conversations = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
+    /** Prompt template the conversation was seeded from; null for legacy rows. */
+    templateId: uuid("template_id").references(() => promptTemplates.id, {
+      onDelete: "set null",
+    }),
     ...auditColumns,
   },
   (t) => ({

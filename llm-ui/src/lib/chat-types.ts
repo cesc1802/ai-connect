@@ -71,6 +71,8 @@ export type ChatAction =
       requestId: string;
       reason: "client" | "timeout" | "manual";
     }
+  // s.error carries no requestId — it faults the send currently in flight.
+  | { type: "SERVER_ERROR"; code: string; message: string }
   | { type: "ABORT_BEFORE_STARTED"; localId: string }
   | { type: "CONNECTION_LOST" }
   | { type: "LOAD_HISTORY"; messages: Msg[] };

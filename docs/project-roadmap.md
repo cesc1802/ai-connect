@@ -1,8 +1,8 @@
 # LLM Gateway - Project Roadmap
 
-**Last Updated:** June 10, 2026  
-**Current Status:** v0.0.2 - Workspace Management + v1.0.0 Core  
-**Next Milestone:** v1.1.0 - Enhanced Observability
+**Last Updated:** June 11, 2026  
+**Current Status:** v0.0.5 - Chat Screen Redesign + Persistent History; v1.1.0 - Provider Config & Lazy Load  
+**Next Milestone:** v1.2.0 - Caching & Context Optimization
 
 ## Vision
 
@@ -64,6 +64,65 @@ Provide a production-ready, provider-agnostic LLM abstraction layer that:
 #### Known Limitations
 - Member-only workspace creation requires admin (future: self-service)
 - No batch workspace operations (future: bulk delete/rename)
+
+---
+
+### v0.0.5 - Chat Screen Workspace-First Redesign + Persistent History (COMPLETE)
+**Status:** ✅ Released  
+**Release Date:** June 11, 2026
+
+#### Features
+- ✅ Chat screen workspace-first UI: switcher → conversation rail → detail
+- ✅ Workspace switcher with role chips and conversation counts
+- ✅ Conversation rail: date-grouped (Hôm nay/Hôm qua/Trước đó), client-side search
+- ✅ Template-seeded conversations with info card display
+- ✅ Persistent conversation history (GET /conversations, GET /conversations/:id/messages)
+- ✅ Event-driven message persistence pipeline (chat.requested → token.generated → stream.completed/aborted)
+- ✅ Auto-title untitled conversations from first user turn
+- ✅ Workspace-scoped template picker in composer
+- ✅ Stop button while streaming, canSend gate
+- ✅ Workspace membership validation, templateId attachment check
+- ✅ Conversation.templateId FK for tracking template seeding
+- ✅ ServerError action for transient error banners
+
+#### Breaking Changes
+- None (new endpoints and components)
+
+#### Known Limitations
+- Member-only conversation deletion requires admin (future: self-service)
+- No conversation sharing/collaboration (future: workspace-scoped read/write)
+
+---
+
+### v0.0.4 & v0.0.3 - Provider Management & Lazy-Load (COMPLETE)
+**Status:** ✅ Released  
+**Release Date:** June 11, 2026
+
+#### v0.0.4: Provider CRUD REST API
+- ✅ `GET /providers` — org admin lists all provider instances
+- ✅ `GET /providers/catalog` — available provider kinds with metadata
+- ✅ `POST /providers/check` — live connection test (5s timeout)
+- ✅ `POST /providers` — create provider with encrypted key
+- ✅ `PATCH /providers/:id` — update name/baseUrl/enabled
+- ✅ `POST /providers/:id/rotate-key` — replace API key
+- ✅ `DELETE /providers/:id` — remove provider (409 if in-use)
+
+#### v0.0.3: Lazy-Load DB Provider Configuration **[BREAKING]**
+- ✅ DbProviderConfigSource with TTL refresh-on-use (60s default)
+- ✅ Config diffing: unchanged providers retain circuit-breaker state
+- ✅ Graceful swap: in-flight streams complete before disposal
+- ✅ First load failure → CONFIG_SOURCE_ERROR; later failures → keep last good config
+- ✅ Provider catalog table seeded with 7 kinds
+- ✅ Env vars removed: ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.
+- ✅ Required: PROVIDER_KEY_VAULT_KEY (32-byte hex) for AES-256-GCM
+
+#### Breaking Changes
+- **CRITICAL:** Environment variables for provider keys no longer supported; must seed via `/providers` API before boot
+- See migration notes below
+
+#### Known Limitations
+- No provider-level audit logging (future: track all create/update/rotate/delete)
+- No provider usage tracking (future: per-provider token metrics)
 
 ---
 

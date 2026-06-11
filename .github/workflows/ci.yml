@@ -26,7 +26,6 @@ jobs:
 
     env:
       DATABASE_URL: postgres://ai_connect:ai_connect_ci@localhost:5432/ai_connect
-      PERSISTENCE: drizzle
 
     steps:
       - uses: actions/checkout@v4

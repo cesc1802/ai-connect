@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   createRequireAuth,
   createRequireOrgAdmin,
-  createRequireWorkspaceAdmin,
 } from "../auth-middleware.js";
 import type { AppContainer } from "../../container.js";
 import type { Request, Response, NextFunction } from "express";
@@ -212,98 +211,5 @@ describe("createRequireOrgAdmin", () => {
     mw(req as Request, res as Response, next);
     expect(next).toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
-  });
-});
-
-describe("createRequireWorkspaceAdmin", () => {
-  let mw: ReturnType<typeof createRequireWorkspaceAdmin>;
-  let req: Partial<Request>;
-  let res: Partial<Response>;
-  let next: NextFunction;
-
-  beforeEach(() => {
-    mw = createRequireWorkspaceAdmin();
-    req = {};
-    res = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn().mockReturnThis(),
-    };
-    next = vi.fn();
-  });
-
-  it("returns 403 when req.user is missing", () => {
-    mw(req as Request, res as Response, next);
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ code: "role_required", message: "Forbidden" });
-  });
-
-  it("returns 403 when workspaceRole is null", () => {
-    req.user = {
-      id: "u1",
-      username: "u",
-      role: "member",
-      org: "o",
-      orgRole: "member",
-      workspace: null,
-      workspaceRole: null,
-    };
-    mw(req as Request, res as Response, next);
-    expect(res.status).toHaveBeenCalledWith(403);
-  });
-
-  it("returns 403 when workspaceRole is member", () => {
-    req.user = {
-      id: "u1",
-      username: "u",
-      role: "member",
-      org: "o",
-      orgRole: "member",
-      workspace: "w",
-      workspaceRole: "member",
-    };
-    mw(req as Request, res as Response, next);
-    expect(res.status).toHaveBeenCalledWith(403);
-  });
-
-  it("returns 403 when workspaceRole is viewer", () => {
-    req.user = {
-      id: "u1",
-      username: "u",
-      role: "member",
-      org: "o",
-      orgRole: "member",
-      workspace: "w",
-      workspaceRole: "viewer",
-    };
-    mw(req as Request, res as Response, next);
-    expect(res.status).toHaveBeenCalledWith(403);
-  });
-
-  it("calls next() when workspaceRole is admin", () => {
-    req.user = {
-      id: "u1",
-      username: "u",
-      role: "member",
-      org: "o",
-      orgRole: "member",
-      workspace: "w",
-      workspaceRole: "admin",
-    };
-    mw(req as Request, res as Response, next);
-    expect(next).toHaveBeenCalled();
-  });
-
-  it("calls next() when workspaceRole is owner", () => {
-    req.user = {
-      id: "u1",
-      username: "u",
-      role: "member",
-      org: "o",
-      orgRole: "member",
-      workspace: "w",
-      workspaceRole: "owner",
-    };
-    mw(req as Request, res as Response, next);
-    expect(next).toHaveBeenCalled();
   });
 });

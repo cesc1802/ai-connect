@@ -11,6 +11,8 @@ export const clientV2MessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("c.chat.send"),
     conversationId: z.string().uuid().optional(),
+    workspaceId: z.string().uuid().optional(),
+    templateId: z.string().uuid().optional(),
     model: z.string().min(1),
     messages: z.array(chatMessageSchema).min(1),
     maxTokens: z.number().int().positive().max(8192).optional(),

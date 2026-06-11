@@ -640,7 +640,7 @@ llm-http
 - `user_workspaces` table: User-workspace membership for co-workspace visibility
 - `UsersRepository` interface: listAll() (admin), listCoWorkspaceUsers(callerId) (members)
 - `DrizzleUsersRepository`: Postgres-backed; listCoWorkspaceUsers uses inner join on `user_workspaces` to find shared workspaces, returns union of shared + caller
-- `InMemoryUsersRepository`: Test double with memberships Map
+- `InMemoryUsersRepository`: Test double with memberships Map (`users/__tests__/`)
 
 *Users API (HTTP Layer):*
 - `users-routes.ts`: Single GET / endpoint; extracts caller role from req.user; delegates to usersService
@@ -1318,7 +1318,7 @@ Response (400 on failure):
 3. If successful, client calls `POST /providers` with same credentials
 4. Server validates against catalog, encrypts key via `ApiKeyVault`, persists to DB
 5. Next gateway load (within TTL) picks up new provider
-6. Legacy `/admin/org/providers` routes unchanged; new `/providers` reuses OrgProvidersService + DrizzleProvidersRepository
+6. `/providers` is the single provider admin surface, backed by OrgProvidersService + DrizzleProvidersRepository
 
 **Security:**
 - API keys encrypted at rest (AES-256-GCM via PROVIDER_KEY_VAULT_KEY)
@@ -1382,7 +1382,7 @@ Container
 │   ├── LLMGateway (providers configured)
 │   └── LlmGatewayAdapter (integration)
 ├── userRepository
-│   └── InMemoryUserRepository (seeded)
+│   └── DrizzleUserRepository (Postgres)
 ├── credentialsVerifier
 │   └── depends on: userRepository
 └── jwtService

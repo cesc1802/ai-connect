@@ -3,6 +3,8 @@ export interface Conversation {
   workspaceId: string;
   userId: string;
   title?: string;
+  /** Prompt template the conversation was seeded from; absent for legacy rows. */
+  templateId?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -21,6 +23,8 @@ export interface ConversationRepository {
   get(id: string): Promise<Conversation | undefined>;
   listByUser(userId: string): Promise<Conversation[]>;
   updateTitle(id: string, title: string): Promise<Conversation | undefined>;
+  /** Bump updatedAt so the conversation sorts to the top of recency lists. */
+  touch(id: string): Promise<void>;
 }
 
 export interface MessageRepository {

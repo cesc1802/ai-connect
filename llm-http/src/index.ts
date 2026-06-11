@@ -4,6 +4,7 @@ import { createLogger } from "./logger.js";
 import { buildContainer, type AppContainer } from "./container.js";
 import { createApp } from "./app.js";
 import { attachChatV2Server, type V2WebSocketHandle } from "./chat-v2/index.js";
+import { attachMessagePersister } from "./chat-v2/message-persister.js";
 
 async function main() {
   const config = loadConfig();
@@ -20,7 +21,15 @@ async function main() {
     convRepo: container.convRepo,
     msgRepo: container.msgRepo,
     activeWorkspaceResolver: container.activeWorkspaceResolver,
+    workspaceMembersRepository: container.workspaceMembersRepository,
+    workspaceTemplatesRepository: container.workspaceTemplatesRepository,
     logger: container.logger,
+  });
+
+  attachMessagePersister({
+    bus: container.bus,
+    convRepo: container.convRepo,
+    msgRepo: container.msgRepo,
   });
 
   server.listen(config.PORT, () => {

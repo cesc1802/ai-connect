@@ -38,6 +38,8 @@ export function createChatReducer(
         return handleServerFailed(state, action, logger);
       case "SERVER_ABORTED":
         return handleServerAborted(state, action, logger);
+      case "SERVER_ERROR":
+        return handleServerError(state, action);
       case "ABORT_BEFORE_STARTED":
         return handleAbortBeforeStarted(state, action);
       case "CONNECTION_LOST":
@@ -235,6 +237,30 @@ function handleServerAborted(
       ...draft,
       status: "aborted",
       abortReason: "user",
+    }),
+  );
+}
+
+// s.error has no requestId, so it is attributed to the in-flight draft, if
+// any. Errors outside a send (e.g. aborting an unowned request) are ignored.
+function handleServerError(
+  state: ChatState,
+  action: Extract<ChatAction, { type: "SERVER_ERROR" }>,
+): ChatState {
+  if (!state.activeLocalId) return state;
+  const draft = state.messages.find(
+    (m) =>
+      m.localId === state.activeLocalId &&
+      m.role === "assistant" &&
+      (m.status === "pending" || m.status === "streaming"),
+  );
+  if (!draft) return state;
+  return clearActive(
+    replaceMsg(state, draft, {
+      ...draft,
+      status: "error",
+      errorCode: action.code,
+      errorMessage: action.message,
     }),
   );
 }

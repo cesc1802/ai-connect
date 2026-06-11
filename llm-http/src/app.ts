@@ -5,22 +5,16 @@ import { createAuthRoutes } from "./auth/auth-routes.js";
 import {
   createRequireAuth,
   createRequireOrgAdmin,
-  createRequireWorkspaceAdmin,
 } from "./auth/auth-middleware.js";
 import { createActiveWorkspaceRoutes } from "./workspace/active-workspace-routes.js";
+import { createMeWorkspacesRoutes } from "./workspace/me-workspaces-routes.js";
 import { createWorkspaceRoutes } from "./workspace/workspace-routes.js";
+import { createConversationsRoutes } from "./conversations/conversations-routes.js";
 import { createPromptTemplatesRoutes } from "./workspace/prompt-templates-routes.js";
 import { createUsersRoutes } from "./users/users-routes.js";
-import { createOrgUsersRoutes } from "./admin/org/users-routes.js";
-import { createOrgTemplatesRouter } from "./admin/org/templates-routes.js";
-import { createOrgProvidersRoutes } from "./admin/org/providers-routes.js";
 import { createProvidersRoutes } from "./providers/providers-routes.js";
-import { createWsMembersRoutes } from "./admin/workspace/members-routes.js";
-import { createWsRolesRoutes } from "./admin/workspace/roles-routes.js";
-import { createWsProvidersRoutes } from "./admin/workspace/ws-providers-routes.js";
-import { createWsTemplatesRoutes } from "./admin/workspace/ws-templates-routes.js";
-import { createWsQuotasRoutes } from "./admin/workspace/quotas-routes.js";
-import { createRedactLogMiddleware } from "./admin/redact-log-middleware.js";
+import { createMeDefaultModelRoutes } from "./providers/me-default-model-routes.js";
+import { createRedactLogMiddleware } from "./shared/redact-log-middleware.js";
 import { createRateLimit } from "./shared/rate-limit.js";
 import { createCors } from "./shared/cors-middleware.js";
 import { createErrorHandler } from "./shared/error-handler.js";
@@ -60,6 +54,21 @@ export function createApp(container: AppContainer): Express {
     createActiveWorkspaceRoutes(container.activeWorkspaceResolver),
   );
   app.use(
+    "/api/me/workspaces",
+    requireAuth,
+    createMeWorkspacesRoutes(container.workspaceMembersRepository),
+  );
+  app.use(
+    "/api/me/default-model",
+    requireAuth,
+    createMeDefaultModelRoutes(container.orgProvidersRepo),
+  );
+  app.use(
+    "/conversations",
+    requireAuth,
+    createConversationsRoutes(container.convRepo, container.msgRepo),
+  );
+  app.use(
     "/workspaces",
     requireAuth,
     createWorkspaceRoutes(
@@ -75,54 +84,6 @@ export function createApp(container: AppContainer): Express {
     createPromptTemplatesRoutes(container.workspaceTemplatesRepository),
   );
   app.use("/users", requireAuth, createUsersRoutes(container));
-  app.use(
-    "/admin/org/users",
-    requireAuth,
-    createRequireOrgAdmin(),
-    createOrgUsersRoutes(container),
-  );
-  app.use(
-    "/admin/org/templates",
-    requireAuth,
-    createRequireOrgAdmin(),
-    createOrgTemplatesRouter(container.orgTemplateService),
-  );
-  app.use(
-    "/admin/org/providers",
-    requireAuth,
-    createRequireOrgAdmin(),
-    createOrgProvidersRoutes(container.orgProvidersService),
-  );
-  app.use(
-    "/admin/workspace/members",
-    requireAuth,
-    createRequireWorkspaceAdmin(),
-    createWsMembersRoutes(container),
-  );
-  app.use(
-    "/admin/workspace/roles",
-    requireAuth,
-    createRequireWorkspaceAdmin(),
-    createWsRolesRoutes(),
-  );
-  app.use(
-    "/admin/workspace/providers",
-    requireAuth,
-    createRequireWorkspaceAdmin(),
-    createWsProvidersRoutes(container.wsProvidersService),
-  );
-  app.use(
-    "/admin/workspace/templates",
-    requireAuth,
-    createRequireWorkspaceAdmin(),
-    createWsTemplatesRoutes(container.wsTemplatesService),
-  );
-  app.use(
-    "/admin/workspace/quotas",
-    requireAuth,
-    createRequireWorkspaceAdmin(),
-    createWsQuotasRoutes(container.wsQuotasService),
-  );
   app.use(
     "/providers",
     requireAuth,

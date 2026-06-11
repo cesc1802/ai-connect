@@ -6,9 +6,9 @@ import {
   type DbClient,
 } from "@ai-connect/db";
 import type { Logger } from "../logger.js";
-import { ApiKeyVault } from "../admin/org/api-key-vault.js";
-import { DrizzleProvidersRepository } from "../admin/org/drizzle-providers-repo.js";
-import { OrgProvidersService } from "../admin/org/providers-service.js";
+import { ApiKeyVault } from "./api-key-vault.js";
+import { DrizzleProvidersRepository } from "./drizzle-providers-repository.js";
+import { OrgProvidersService } from "./providers-service.js";
 import {
   DbProviderConfigSource,
   mapRowsToProviderConfig,

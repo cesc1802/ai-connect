@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { Request, Response, NextFunction, Router } from "express";
 import type { AuditEmitter } from "@ai-connect/shared";
-import { ApiKeyVault } from "../admin/org/api-key-vault.js";
-import { InMemoryProvidersRepository } from "../admin/org/providers-repo.js";
+import { ApiKeyVault } from "./api-key-vault.js";
+import { InMemoryProvidersRepository } from "./__tests__/in-memory-providers-repository.js";
 import {
   OrgProvidersService,
   ProviderInUseError,
-} from "../admin/org/providers-service.js";
+} from "./providers-service.js";
 import { createRequireOrgAdmin } from "../auth/auth-middleware.js";
 import type { CheckResult, CheckTarget } from "./connection-checker.js";
 import { createProvidersRoutes } from "./providers-routes.js";

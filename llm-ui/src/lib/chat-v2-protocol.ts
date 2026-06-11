@@ -20,6 +20,8 @@ export const ClientV2MessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("c.chat.send"),
     conversationId: z.string().uuid().optional(),
+    workspaceId: z.string().uuid().optional(),
+    templateId: z.string().uuid().optional(),
     model: z.string().min(1),
     messages: z.array(chatMessageSchema).min(1),
     maxTokens: z.number().int().positive().max(8192).optional(),
@@ -76,11 +78,15 @@ const FinishReasonSchema = z.enum([
 
 const ConversationSchema = z.object({
   id: z.string(),
+  workspaceId: z.string(),
   userId: z.string(),
   title: z.string().optional(),
+  templateId: z.string().optional(),
   createdAt: z.number(),
   updatedAt: z.number(),
 });
+
+export type ChatV2Conversation = z.infer<typeof ConversationSchema>;
 
 // --- Server → Client ---
 

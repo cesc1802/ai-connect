@@ -10,46 +10,17 @@ import { DrizzleUserRepository } from "./auth/drizzle-user-repository.js";
 import { CredentialsVerifier } from "./auth/credentials-verifier.js";
 import { JwtService } from "./auth/jwt-service.js";
 import { AuthService } from "./auth/auth-service.js";
-import { StdoutAuditEmitter } from "./admin/audit-emitter-stdout.js";
-import {
-  InMemoryOrgUsersRepository,
-  type OrgUserRow,
-} from "./admin/org/users-repo.js";
-import {
-  DefaultOrgUsersService,
-  type OrgUsersService,
-} from "./admin/org/users-service.js";
-import { InMemoryOrgTemplateRepo } from "./admin/org/templates-repo.js";
-import { OrgTemplateService } from "./admin/org/templates-service.js";
-import { ApiKeyVault } from "./admin/org/api-key-vault.js";
-import { DrizzleProvidersRepository } from "./admin/org/drizzle-providers-repo.js";
-import type { ProvidersRepository } from "./admin/org/providers-repo.js";
-import { OrgProvidersService } from "./admin/org/providers-service.js";
-import {
-  InMemoryWsMembersRepository,
-  type WsMemberRow,
-} from "./admin/workspace/members-repo.js";
-import {
-  DefaultWsMembersService,
-  type WsMembersService,
-} from "./admin/workspace/members-service.js";
-import { InMemoryWsProviderBindingsRepo } from "./admin/workspace/ws-providers-repo.js";
-import { WsProvidersService } from "./admin/workspace/ws-providers-service.js";
-import { InMemoryWsTemplateBindingsRepo } from "./admin/workspace/ws-templates-repo.js";
-import { WsTemplatesService } from "./admin/workspace/ws-templates-service.js";
-import { InMemoryWsQuotasRepo } from "./admin/workspace/quotas-repo.js";
-import {
-  StubUsageCounter,
-  WsQuotasService,
-} from "./admin/workspace/quotas-service.js";
+import { StdoutAuditEmitter } from "./shared/audit-emitter-stdout.js";
+import { ApiKeyVault } from "./providers/api-key-vault.js";
+import { DrizzleProvidersRepository } from "./providers/drizzle-providers-repository.js";
+import type { ProvidersRepository } from "./providers/providers-repository.js";
+import { OrgProvidersService } from "./providers/providers-service.js";
 import type { ChatEvent } from "@ai-connect/shared";
 import { EventBus } from "./events/event-bus.js";
 import { LocalConnectionRegistry } from "./transport/local-connection-registry.js";
 import type { ConnectionRegistry } from "./transport/connection-registry.js";
-import { InMemoryConversationRepository } from "./repositories/in-memory-conversation-repo.js";
-import { InMemoryMessageRepository } from "./repositories/in-memory-message-repo.js";
-import { DrizzleConversationRepository } from "./repositories/drizzle/conversation-repository.js";
-import { DrizzleMessageRepository } from "./repositories/drizzle/message-repository.js";
+import { DrizzleConversationRepository } from "./conversations/drizzle-conversation-repository.js";
+import { DrizzleMessageRepository } from "./conversations/drizzle-message-repository.js";
 import type {
   ConversationRepository,
   MessageRepository,
@@ -58,7 +29,6 @@ import { createDbClient, type DbClient } from "@ai-connect/db";
 import { seedDrizzleDevData } from "./auth/seed-users.js";
 import { seedPromptTemplates } from "./workspace/seed-prompt-templates.js";
 import type { ActiveWorkspaceResolver } from "./workspace/active-workspace-resolver.js";
-import { InMemoryActiveWorkspaceResolver } from "./workspace/active-workspace-resolver.js";
 import { DrizzleActiveWorkspaceResolver } from "./workspace/drizzle-active-workspace-resolver.js";
 import type { WorkspaceRepository } from "./workspace/workspace-repository.js";
 import { DrizzleWorkspaceRepository } from "./workspace/drizzle-workspace-repository.js";
@@ -85,14 +55,8 @@ export interface AppContainer {
   jwtService: JwtService;
   auditEmitter: AuditEmitter;
   usersService: UsersService;
-  orgUsersService: OrgUsersService;
-  orgTemplateService: OrgTemplateService;
   orgProvidersService: OrgProvidersService;
   orgProvidersRepo: ProvidersRepository;
-  wsMembersService: WsMembersService;
-  wsProvidersService: WsProvidersService;
-  wsTemplatesService: WsTemplatesService;
-  wsQuotasService: WsQuotasService;
   apiKeyVault: ApiKeyVault;
   bus: EventBus<ChatEvent>;
   registry: ConnectionRegistry;
@@ -111,8 +75,7 @@ export async function buildContainer(
   config: Config,
   logger: Logger
 ): Promise<AppContainer> {
-  // The user repository is always Postgres-backed, so a DB connection is required
-  // to boot regardless of PERSISTENCE (which only selects conversation/message repos).
+  // All repositories are Postgres-backed, so a DB connection is required to boot.
   const databaseUrl = process.env.DATABASE_URL ?? "";
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required");
@@ -153,14 +116,6 @@ export async function buildContainer(
   const auditEmitter = new StdoutAuditEmitter(logger);
   const usersRepo = new DrizzleUsersRepository(dbClient);
   const usersService = new DefaultUsersService(usersRepo);
-  const orgUsersRepo = new InMemoryOrgUsersRepository(seedOrgUsers());
-  const orgUsersService = new DefaultOrgUsersService(
-    orgUsersRepo,
-    auditEmitter,
-    logger,
-  );
-  const orgTemplateRepo = new InMemoryOrgTemplateRepo();
-  const orgTemplateService = new OrgTemplateService(orgTemplateRepo, auditEmitter);
   const orgProvidersRepo = new DrizzleProvidersRepository(dbClient);
   const orgProvidersService = new OrgProvidersService(
     orgProvidersRepo,
@@ -168,55 +123,16 @@ export async function buildContainer(
     auditEmitter,
     logger,
   );
-  const wsMembersRepo = new InMemoryWsMembersRepository(seedWsMembers());
-  const wsMembersService = new DefaultWsMembersService(
-    wsMembersRepo,
-    auditEmitter,
-    logger,
-  );
-  const wsProviderBindingsRepo = new InMemoryWsProviderBindingsRepo();
-  const wsProvidersService = new WsProvidersService(
-    wsProviderBindingsRepo,
-    orgProvidersRepo,
-    auditEmitter,
-    logger,
-  );
-  const wsTemplateBindingsRepo = new InMemoryWsTemplateBindingsRepo();
-  const wsTemplatesService = new WsTemplatesService(
-    wsTemplateBindingsRepo,
-    orgTemplateRepo,
-    auditEmitter,
-    logger,
-  );
-  const wsQuotasRepo = new InMemoryWsQuotasRepo();
-  const wsQuotasService = new WsQuotasService(
-    wsQuotasRepo,
-    new StubUsageCounter(),
-    auditEmitter,
-    logger,
-  );
-
   const bus = new EventBus<ChatEvent>({ logger });
   const registry = new LocalConnectionRegistry();
 
-  const persistence = process.env.PERSISTENCE ?? "in-memory";
-  let convRepo: ConversationRepository;
-  let msgRepo: MessageRepository;
-  let activeWorkspaceResolver: ActiveWorkspaceResolver;
-
-  if (persistence === "drizzle") {
-    convRepo = new DrizzleConversationRepository(dbClient);
-    msgRepo = new DrizzleMessageRepository(dbClient);
-    activeWorkspaceResolver = new DrizzleActiveWorkspaceResolver(dbClient);
-    if (config.NODE_ENV !== "production") {
-      await seedDrizzleDevData(dbClient);
-      await seedPromptTemplates(dbClient);
-    }
-  } else {
-    const inMemoryConvRepo = new InMemoryConversationRepository();
-    convRepo = inMemoryConvRepo;
-    msgRepo = new InMemoryMessageRepository(inMemoryConvRepo);
-    activeWorkspaceResolver = new InMemoryActiveWorkspaceResolver();
+  const convRepo: ConversationRepository = new DrizzleConversationRepository(dbClient);
+  const msgRepo: MessageRepository = new DrizzleMessageRepository(dbClient);
+  const activeWorkspaceResolver: ActiveWorkspaceResolver =
+    new DrizzleActiveWorkspaceResolver(dbClient);
+  if (config.NODE_ENV !== "production") {
+    await seedDrizzleDevData(dbClient);
+    await seedPromptTemplates(dbClient);
   }
 
   const chatHandler = new ChatHandler(bus, chatGateway, logger);
@@ -232,14 +148,8 @@ export async function buildContainer(
     jwtService,
     auditEmitter,
     usersService,
-    orgUsersService,
-    orgTemplateService,
     orgProvidersService,
     orgProvidersRepo,
-    wsMembersService,
-    wsProvidersService,
-    wsTemplatesService,
-    wsQuotasService,
     apiKeyVault,
     bus,
     registry,
@@ -277,36 +187,4 @@ export async function warmUpProviderSource(
       "Provider config could not be loaded at boot; the gateway retries on the first chat request"
     );
   }
-}
-
-function seedWsMembers(): Map<string, WsMemberRow[]> {
-  return new Map([
-    [
-      "demo-ws",
-      [
-        {
-          id: "seed-ws-admin",
-          email: "ada@demo.example",
-          role: "admin",
-          joinedAt: "2026-01-15T09:00:00.000Z",
-        },
-      ],
-    ],
-  ]);
-}
-
-function seedOrgUsers(): Map<string, OrgUserRow[]> {
-  return new Map([
-    [
-      "demo-org",
-      [
-        {
-          id: "seed-user-active",
-          email: "ada@demo.example",
-          status: "active",
-          joinedAt: "2026-01-15T09:00:00.000Z",
-        },
-      ],
-    ],
-  ]);
 }

@@ -8,6 +8,79 @@ This document records significant changes, features, and fixes across the LLM Ga
 
 ## [Unreleased] - 2026-06-11
 
+### llm-ui v0.0.5 (Feature Release)
+
+**Chat Screen Workspace-First Redesign**
+
+Complete rewrite of chat interface to prioritize workspace selection and team context, with persistent conversation history and template seeding.
+
+**UI/UX Changes:**
+- Removed: `chat-history-list`, `streaming-controls`, `template-picker` components; `default-model.ts` utility
+- New rail-based layout: workspace-switcher → conversation list (date-grouped) → chat detail
+- Workspace switcher: member's workspaces with role chips, conversation count per workspace
+- Conversation rail: search + Hôm nay/Hôm qua/Trước đó grouping, client-side filtering
+- New chat dialog: template seeded (optional templateId passed to server)
+- Conversation header: template info card (icon, title, description) if applicable
+- Composer: workspace-scoped template picker, stop button while streaming, canSend gate
+- Message bubbles: tool card display, status notes on completion/abort
+- Message list: auto-scroll, typing indicator with animated dots
+- Vietnamese copy throughout (no model/agent pickers, workspace-centric)
+
+**Backend Routes:**
+- `GET /conversations` — owner-scoped paginated list (defaults: page=1, limit=20)
+- `GET /conversations/:id/messages` — owner-scoped list ordered by createdAt
+- `GET /api/me/workspaces` — user's workspace memberships + per-workspace roles
+- `GET /api/me/default-model` — member-safe; returns first enabled provider's defaultModel
+
+**Frontend API Integration:**
+- `conversations-api.ts` — list, fetch messages
+- `my-workspaces-api.ts` — fetch memberships with roles
+- `my-default-model-api.ts` — fetch default model for user
+- `group-conversations-by-day.ts` — utility to bucket conversations
+- `workspace-hue.ts` — stable oklch hue from workspace id
+- `workspace-display-name.ts` — short name derivation
+- `workspace-roles.ts` — role permission matrix
+
+**Chat v2 Protocol Updates:**
+- `c.chat.send` now requires `workspaceId`, optional `templateId`; validates membership + template attachment
+- Server returns `s.error invalid_template` if templateId not attached to target workspace
+- Reducer: new `SERVER_ERROR` action dispatches transient error banner
+
+**Database Schema:**
+- `conversations.template_id` (nullable FK) — tracks template used for seeding
+- Migration: `0006_conversation_template_id.sql`
+
+**Testing:**
+- 86 tests passing in llm-ui
+- New tests for group-conversations-by-day, workspace-hue, workspace-display-name utilities
+
+### llm-http v0.0.5 (Feature Release)
+
+**Conversation Persistence + REST Routes + Message Pipeline**
+
+New REST endpoints for fetching conversations and persistent message storage with event-driven pipeline.
+
+**REST Endpoints:**
+- `GET /conversations` — paginated owner-scoped list (query: page, limit; default limit=20)
+- `GET /conversations/:id/messages` — owner-scoped message list ordered by createdAt (includes partial flag)
+
+**Message Persistence Pipeline:**
+- New `message-persister.ts` subscribes to event bus
+- `chat.requested` event → persist user turn + auto-title untitled conversations (50-char truncation from first user message)
+- `token.generated` event → buffer tokens (no persist)
+- `stream.completed` event → persist assistant turn (full, partial=false)
+- `stream.aborted` event → persist assistant turn (partial=true, incomplete content)
+- Prompt assembly uses persisted DB history + newest client message only (dedup guard)
+- Conversation.updatedAt touched on each turn persist (for rail sorting)
+
+**Repository Enhancements:**
+- `ConversationRepository.touch(id)` — update updatedAt timestamp
+- `Conversation` type gained `templateId` (optional, tracks template seeding)
+
+**Architecture:**
+- Event-driven: persister is stateless subscriber, decoupled from websocket handler
+- In-flight graceful shutdown: streams complete before persister closes
+
 ### llm-http v0.0.4 (Feature Release)
 
 **Provider CRUD REST API (`/providers`)**
@@ -227,11 +300,13 @@ Core LLM provider abstraction with resilience patterns.
 
 | Date | Package | Version | Type | Summary |
 |------|---------|---------|------|---------|
+| 2026-06-11 | llm-ui | 0.0.5 | Feature | Chat screen workspace-first redesign + persistent history |
+| 2026-06-11 | llm-http | 0.0.5 | Feature | Conversation REST routes + event-driven message persistence |
 | 2026-06-11 | llm-http | 0.0.4 | Feature | Provider CRUD REST API + connection checker (5s timeout) |
 | 2026-06-11 | llm-gateway | 1.1.0 | Feature | ProviderConfigSource + TTL refresh + graceful swap |
 | 2026-06-11 | llm-http | 0.0.3 | Feature | **BREAKING** Lazy-load DB providers (env vars removed) |
 | 2026-06-10 | llm-http | 0.0.2 | Feature | Workspace paging & CRUD (GET/POST/PATCH/DELETE) |
-| 2026-06-10 | llm-ui | — | Feature | Workspace management screens & components |
+| 2026-06-10 | llm-ui | 0.0.4 | Feature | Workspace management screens & components |
 | 2026-04-17 | llm-http | 0.0.1 | Feature | Initial HTTP/WS server release |
 | 2026-04-17 | llm-shared | 0.0.1 | Feature | Initial shared types release |
 | 2026-04-17 | llm-gateway | 1.0.0 | Stable | Production-ready gateway |

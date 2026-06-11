@@ -3,7 +3,7 @@ import {
   CircleAlert, CircleCheck, Code, Copy, Cpu, CreditCard, Crown, GitBranch, Globe, Grid3x3, HardDrive,
   Hash, History, Info, KeyRound, Layers, LayoutDashboard, Link, LogOut, Mail, MessageSquare,
   Moon, Paperclip, PanelLeftClose, PanelLeftOpen, Plus, ScrollText, Search, Send, Settings,
-  ShieldCheck, SlidersHorizontal, Sparkles, SquarePen, Sun, Trash2, User, UserCog, UserPlus,
+  ShieldCheck, SlidersHorizontal, Sparkles, Square, SquarePen, Sun, Trash2, User, UserCog, UserPlus,
   Users, Wrench, X, Zap, Package,
   type LucideIcon,
 } from "lucide-react";
@@ -51,6 +51,7 @@ const REGISTRY: Record<string, LucideIcon> = {
   "shield-check": ShieldCheck,
   "sliders-horizontal": SlidersHorizontal,
   sparkles: Sparkles,
+  square: Square,
   "square-pen": SquarePen,
   sun: Sun,
   "trash-2": Trash2,

@@ -539,11 +539,15 @@ llm-http/src/
 │   ├── local-message-router.ts  # In-memory router implementation
 │   └── __tests__/               # Transport tests
 │
-├── repositories/                 # Data persistence (Phase 3)
-│   ├── in-memory-conversation-repo.ts  # Conversation storage
-│   ├── in-memory-message-repo.ts       # Message storage
-│   ├── index.ts                 # Exports
-│   └── __tests__/               # Repository tests
+├── conversations/                # Conversation/message persistence (Drizzle) + REST routes
+│   ├── drizzle-conversation-repository.ts  # Conversation storage (Postgres)
+│   ├── drizzle-message-repository.ts       # Message storage (Postgres)
+│   ├── conversation-mapper.ts   # Row → domain mapping
+│   ├── message-mapper.ts        # Row → domain mapping
+│   ├── conversations-routes.ts  # GET /conversations (owner-scoped paged list with pagination)
+│   ├── messages-routes.ts       # GET /conversations/:id/messages (owner-scoped, ordered by createdAt)
+│   ├── message-persister.ts     # Event-driven persistence (subscribes to event bus)
+│   └── __tests__/               # Repository + routes tests
 │
 ├── ws/                           # WebSocket utilities
 │   └── ws-upgrade-auth.ts       # JWT auth on upgrade
@@ -554,7 +558,9 @@ llm-http/src/
 ├── shared/                       # Shared utilities
 │   ├── rate-limit.ts            # Rate limiting factory
 │   ├── cors-middleware.ts       # CORS configuration
-│   └── error-handler.ts         # Express error handler
+│   ├── error-handler.ts         # Express error handler
+│   ├── redact-log-middleware.ts # Redacts secrets from request logs
+│   └── audit-emitter-stdout.ts  # Audit event emitter
 │
 ├── app.ts                        # Express app setup
 ├── config.ts                     # Environment config loading
@@ -581,7 +587,7 @@ llm-http/src/
 - `POST /providers/:id/rotate-key` — org admin replaces API key with new one
 - `DELETE /providers/:id` — org admin removes provider (409 if in_use by workspace/gateway)
 - Implementation: `src/providers/providers-routes.ts` (routes), `src/providers/providers-route-schemas.ts` (Zod validation), `src/providers/connection-checker.ts` (5s probe via HTTP header-only auth)
-- Service layer reuses `OrgProvidersService` + `DrizzleProvidersRepository` (shared with legacy `/admin/org/providers`)
+- Service layer: `OrgProvidersService` (`src/providers/providers-service.ts`) + `DrizzleProvidersRepository` (`src/providers/drizzle-providers-repository.ts`)
 
 *Provider Configuration (Lazy Load for Gateway):*
 - `DbProviderConfigSource` in `llm-http/src/providers/db-provider-config-source.ts`
@@ -597,16 +603,18 @@ llm-http/src/
 - **Boot with zero providers:** non-fatal warning logged; chat fails gracefully until provider created via `/providers` API
 
 **Event-Driven Architecture:**
-- EventBus pub/sub system for decoupled message flow
+- EventBus pub/sub system for decoupled message flow (chat.requested, token.generated, stream.completed, stream.aborted)
 - ConnectionRegistry tracks active WebSocket sessions
 - Local message routing for inter-module communication
-- In-memory conversation and message repositories
-- `/ws/chat/v2` endpoint with event-driven protocol
+- Conversation/message repositories: Interface + Drizzle (Postgres) implementation for persistence
+- `/ws/chat/v2` endpoint with event-driven protocol (JWT auth on upgrade)
 - ChatHandler bridges LLM gateway to event streaming
-- ConnectionSession manages per-client lifecycle
+- ConnectionSession manages per-client lifecycle (membership validation on send)
+- MessagePersister subscribes to event bus; persists turns (user + assistant) with partial flag on abort
 
 **Client Message Types (v2):**
-- `c.chat.send`: Start streaming chat (conversationId optional)
+- `c.chat.send`: Start streaming chat (conversationId optional, workspaceId required, templateId optional, messages with newest client message only)
+  - workspaceId validated against user membership; returns s.error invalid_template if templateId not attached to target workspace
 - `c.chat.abort`: Cancel active stream by requestId
 - `c.ping`: Keepalive ping
 
@@ -616,9 +624,16 @@ llm-http/src/
 - `s.chat.completed`: Stream finished (requestId, usage, finishReason, latencyMs)
 - `s.chat.failed`: Error occurred (requestId, code, message)
 - `s.chat.aborted`: Stream cancelled (requestId, reason)
-- `s.conversation.created`: New conversation (full Conversation object)
-- `s.error`: Protocol error (code, message)
+- `s.conversation.created`: New conversation (full Conversation object with templateId if seeded)
+- `s.error`: Protocol error (code, message, serverError action dispatches banner)
 - `s.pong`: Pong response
+
+**Message Persistence Pipeline:**
+- `chat.requested` event → persist user turn + auto-title untitled conversations (truncate to 50 chars from first user message)
+- `token.generated` event → buffer tokens in memory (no immediate persist)
+- `stream.completed` event → persist assistant turn (full, partial=false)
+- `stream.aborted` event → persist assistant turn (partial=true, incomplete content)
+- Prompt assembly uses persisted DB history + only newest client message (dedup guard against duplicate sends)
 
 **Workspace Management:**
 - Role-aware list endpoint (admin: all; member: own workspaces only)
@@ -657,7 +672,7 @@ llm-http/src/
 - `users-routes.ts`: Single GET / endpoint returning `{users:[{id, username, role}]}`; mounts under `app.use("/users", requireAuth, createUsersRoutes(container))`
 - `users-repo.ts`: `UsersRepository` interface (listAll, listCoWorkspaceUsers) with two implementations:
   - `DrizzleUsersRepository`: Postgres-backed via Drizzle ORM; listAll() returns all users; listCoWorkspaceUsers(callerId) returns users sharing ≥1 workspace via `user_workspaces` table, caller always included even if 0 memberships
-  - `InMemoryUsersRepository`: Test double for unit tests
+  - `InMemoryUsersRepository`: Test double in `users/__tests__/in-memory-users-repository.ts`
 - `users-service.ts`: `DefaultUsersService` layer enforcing role-based scoping: admin role → listAll(); non-admin → listCoWorkspaceUsers(callerId)
 - Container: `usersRepo` (DrizzleUsersRepository), `usersService` (DefaultUsersService) instantiated in `container.ts`
 
@@ -703,8 +718,8 @@ llm-db/src/
 │   ├── users.ts                  # User table + system role
 │   ├── user-workspaces.ts        # User-workspace membership
 │   ├── user-role-workspaces.ts   # Workspace-scoped roles
-│   ├── conversations.ts          # Chat conversations (workspace + user scoped)
-│   ├── messages.ts               # Chat messages (conversation scoped)
+│   ├── conversations.ts          # Chat conversations (workspace + user scoped, templateId optional FK)
+│   ├── messages.ts               # Chat messages (conversation scoped, partial flag on abort)
 │   ├── provider-catalogs.ts      # LLM provider registry
 │   ├── providers.ts              # Provider instances
 │   ├── workspace-providers.ts    # Workspace provider overrides
@@ -717,10 +732,13 @@ llm-db/src/
 │   └── migrate.ts                # CLI: Apply pending migrations via drizzle-orm/migrator
 │
 ├── drizzle/                       # Generated migrations (forward-only)
-│   ├── 0000_phase02_init.sql     # Phase 2: Initial 10-table schema (workspaces, users, conversations, messages, providers, etc.)
-│   ├── 0001_add_user_system_role.sql # Phase 2: Add system role to users table
+│   ├── 0000_initial_schema.sql   # Initial 10-table schema (workspaces, users, conversations, messages, providers, etc.)
+│   ├── 0001_add_user_system_role.sql # Add system role to users table
 │   ├── 0002_prompt_template_library.sql # Add prompt_templates and workspace_templates tables
-│   └── 0003_prompt_template_body.sql # Add nullable body column to prompt_templates
+│   ├── 0003_prompt_template_body.sql # Add nullable body column to prompt_templates
+│   ├── 0004_provider_last_four.sql # Add keyLastFour to providers table
+│   ├── 0005_provider_default_model_scope_catalog_seed.sql # Add default_model + scope to providers; seed provider_catalogs
+│   └── 0006_conversation_template_id.sql # Add templateId FK to conversations
 │
 ├── drizzle.config.ts             # drizzle-kit config (reads compiled dist/schema/index.js)
 ├── tsconfig.json                 # TypeScript build config
@@ -784,10 +802,26 @@ llm-ui/src/
 │   ├── workspace-detail-screen.tsx    # Workspace management 4-tab interface
 │   ├── templates-screen.tsx           # Org prompt-template library management (admin CRUD)
 │   ├── workspaces-screen.tsx          # Workspace list with search/filter
-│   ├── chat-screen.tsx                # Chat interface with streaming
+│   ├── chat-screen.tsx                # Workspace-first chat interface with streaming
 │   └── ...
 │
 ├── components/
+│   ├── chat/                          # Chat screen workspace-first redesign
+│   │   ├── rail/
+│   │   │   ├── workspace-switcher.tsx # Step 1: workspace selection with role chips + conversation counts
+│   │   │   ├── ws-role-chips.tsx      # Role display badges (wsadmin, pm, ba, qa, dev)
+│   │   │   ├── chat-rail.tsx          # Conversation sidebar: search + date-grouped list
+│   │   │   ├── conversation-row.tsx   # Single conversation item (title, date, unread indicator)
+│   │   │   └── empty-conversation.tsx # Empty state when no conversations selected
+│   │   ├── new-chat-dialog.tsx        # Template-seeded new conversation dialog
+│   │   ├── conversation-header.tsx    # Conversation title + template info card
+│   │   ├── template-info-card.tsx     # Shows template preview (icon, title, description)
+│   │   ├── message-bubble.tsx         # Message display with tool cards + status notes
+│   │   ├── message-list.tsx           # Auto-scroll + typing indicator with dots
+│   │   ├── composer.tsx               # Message input with workspace-scoped template picker + stop button
+│   │   ├── socket-indicator.tsx       # WS connection status
+│   │   └── streaming-controls.tsx     # DELETED (consolidated to composer)
+│   │
 │   ├── workspace/                     # Workspace detail feature components
 │   │   ├── members-tab.tsx            # Members list with add/remove
 │   │   ├── add-member-dialog.tsx      # Dialog to add new member
@@ -811,7 +845,14 @@ llm-ui/src/
 │   └── ...
 │
 ├── lib/
-│   ├── prompt-templates-api.ts        # Org template library CRUD API client (createTemplate, updateTemplate, deleteTemplate, listTemplateLibrary)
+│   ├── conversations-api.ts           # Fetch conversations + messages; GET /conversations + /conversations/:id/messages
+│   ├── my-workspaces-api.ts           # Fetch user workspace memberships + per-workspace roles
+│   ├── my-default-model-api.ts        # Fetch default LLM model for user (member-safe, returns first enabled provider model)
+│   ├── group-conversations-by-day.ts  # Utility: Group conversations into Hôm nay/Hôm qua/Trước đó day buckets
+│   ├── workspace-hue.ts               # Stable hue derivation from workspace id (oklch color)
+│   ├── workspace-display-name.ts      # Short name derivation from workspace name
+│   ├── workspace-roles.ts             # Role permission matrix (wsadmin, pm, ba, qa, dev)
+│   ├── prompt-templates-api.ts        # Org template library CRUD API client
 │   ├── workspace-members-api.ts       # Members API client
 │   ├── workspace-templates-api.ts     # Workspace-template attachment API client
 │   ├── workspace-providers-api.ts     # Providers API client
@@ -822,7 +863,7 @@ llm-ui/src/
 │   ├── api-error.ts                   # API error handling
 │   ├── icons.ts                       # Icon registry (Lucide)
 │   ├── cn.ts                          # Tailwind className utilities
-│   ├── slugify.ts                     # URL slug generation + hue derivation
+│   ├── slugify.ts                     # URL slug generation
 │   └── ...
 │
 ├── App.tsx                            # Main app router
@@ -830,6 +871,16 @@ llm-ui/src/
 ```
 
 **Key Features:**
+
+- **Chat Screen Workspace-First Redesign** (Vietnamese UX, owner-scoped conversations)
+  - **Step 1: Workspace Switcher** — Member selects active workspace with role chips + conversation count per workspace
+  - **Step 2: Conversation Rail** — Date-grouped list (Hôm nay / Hôm qua / Trước đó) with client-side search; shows conversation count per workspace
+  - **Step 3: Conversation Detail** — Displays template info card if seeded, full chat history (persistent), new chat dialog for template selection
+  - **New Chat Flow** — Template-seeded conversations (templateId passed to server); auto-titles untitled chats based on first user turn
+  - **Server Routes:** `GET /conversations` (owner-scoped), `GET /conversations/:id/messages` (owner-scoped), `GET /api/me/workspaces` (memberships + roles), `GET /api/me/default-model` (member-safe model)
+  - **Composer Changes** — Workspace-scoped template picker, stop button while streaming, canSend gate based on connected status
+  - **Message Persistence** — New event-driven pipeline: `chat.requested` → persist user turn + auto-title; `token.generated` → buffer tokens; `stream.completed/aborted` → persist assistant turn with partial flag
+  - **Deleted Components** — Removed: `chat-history-list`, `streaming-controls`, `template-picker`, `default-model.ts` (consolidated into rail + composer)
 
 - **Org Prompt-Template Library Management** (`templates-screen.tsx` + `components/templates/*`)
   - Admin CRUD: Create, edit, update, delete templates with live preview
@@ -845,6 +896,8 @@ llm-ui/src/
   - Settings tab: Workspace name/slug edit (admin-only)
 
 - **API Integration:** Type-safe Fetch API clients with error handling
+  - Chat: `conversations-api.ts` (list, fetch messages)
+  - Workspace memberships: `my-workspaces-api.ts` (roles), `my-default-model-api.ts` (per-member model)
   - Org templates: Full CRUD (createTemplate, updateTemplate, deleteTemplate, listTemplateLibrary)
   - Members: List, add, update roles, remove
   - Workspace attachments: List attached, attach, detach templates
@@ -853,10 +906,11 @@ llm-ui/src/
 - **UI Components:** Modular, reusable, keyboard-accessible
   - Dialogs, popovers, dropdowns (shadcn/ui base)
   - Role checklist, toggle switches, member/provider/template rows
-  - Status badges with visual hue (derived from workspace slug)
+  - Status badges with visual hue (derived from workspace id via `workspace-hue.ts`)
   - Icon picker (12-icon registry in `lib/icons.ts`), mono body textarea for template content
 
 - **State Management:** React hooks (useState, useCallback, useEffect)
   - Monotonic sequence guards for race condition handling
   - Error boundaries for graceful degradation
   - Real-time sync via sequential API calls (no polling)
+  - Reducer: `chat-reducer.ts` with new SERVER_ERROR action for transient error banner

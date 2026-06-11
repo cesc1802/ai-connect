@@ -5,9 +5,5 @@ export { seedDrizzleDevData } from "./seed-users.js";
 export { CredentialsVerifier } from "./credentials-verifier.js";
 export { AuthService } from "./auth-service.js";
 export { JwtService } from "./jwt-service.js";
-export {
-  createRequireAuth,
-  createRequireOrgAdmin,
-  createRequireWorkspaceAdmin,
-} from "./auth-middleware.js";
+export { createRequireAuth, createRequireOrgAdmin } from "./auth-middleware.js";
 export { createAuthRoutes } from "./auth-routes.js";

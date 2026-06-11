@@ -1,8 +1,9 @@
-import { eq, and, notInArray, inArray } from "drizzle-orm";
+import { eq, and, notInArray, inArray, isNull } from "drizzle-orm";
 import {
   users,
   userWorkspaces,
   userRoleWorkspaces,
+  workspaces,
   type DbClient,
 } from "@ai-connect/db";
 import {
@@ -10,6 +11,7 @@ import {
   MemberNotFoundError,
   type WsRole,
   type WorkspaceMember,
+  type WorkspaceMembership,
   type WorkspaceMembersRepository,
 } from "./workspace-members-repository.js";
 
@@ -61,6 +63,43 @@ export class DrizzleWorkspaceMembersRepository
       username: m.username,
       orgRole: m.orgRole,
       wsRoles: rolesMap.get(m.userId) ?? [],
+    }));
+  }
+
+  async listMembershipsForUser(userId: string): Promise<WorkspaceMembership[]> {
+    const wsRows = await this.client.db
+      .select({
+        workspaceId: workspaces.id,
+        slug: workspaces.slug,
+        name: workspaces.name,
+      })
+      .from(userWorkspaces)
+      .innerJoin(workspaces, eq(userWorkspaces.workspaceId, workspaces.id))
+      .where(
+        and(eq(userWorkspaces.userId, userId), isNull(workspaces.deletedAt))
+      )
+      .orderBy(workspaces.name);
+
+    if (wsRows.length === 0) return [];
+
+    const roleRows = await this.client.db
+      .select({
+        workspaceId: userRoleWorkspaces.workspaceId,
+        role: userRoleWorkspaces.role,
+      })
+      .from(userRoleWorkspaces)
+      .where(eq(userRoleWorkspaces.userId, userId));
+
+    const rolesMap = new Map<string, WsRole[]>();
+    for (const { workspaceId, role } of roleRows) {
+      const arr = rolesMap.get(workspaceId) ?? [];
+      arr.push(role as WsRole);
+      rolesMap.set(workspaceId, arr);
+    }
+
+    return wsRows.map((w) => ({
+      ...w,
+      roles: rolesMap.get(w.workspaceId) ?? [],
     }));
   }
 

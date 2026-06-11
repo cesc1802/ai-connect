@@ -4,6 +4,8 @@ import type { User, ChatEvent, ChatRequested, ConversationRepository, MessageRep
 import type { EventBus } from "../events/event-bus.js";
 import type { ConnectionRegistry, Connection } from "../transport/connection-registry.js";
 import type { ActiveWorkspaceResolver } from "../workspace/active-workspace-resolver.js";
+import type { WorkspaceMembersRepository } from "../workspace/workspace-members-repository.js";
+import type { WorkspaceTemplatesRepository } from "../workspace/workspace-templates-repository.js";
 import type { Logger } from "../logger.js";
 import type { ChatHandler } from "./chat-handler.js";
 import { clientV2MessageSchema, type ClientV2Message } from "./client-message-schema.js";
@@ -18,6 +20,8 @@ export interface ConnectionSessionDeps {
   convRepo: ConversationRepository;
   msgRepo: MessageRepository;
   activeWorkspaceResolver: ActiveWorkspaceResolver;
+  workspaceMembersRepository: WorkspaceMembersRepository;
+  workspaceTemplatesRepository: WorkspaceTemplatesRepository;
   logger: Logger;
 }
 
@@ -172,26 +176,56 @@ export class ConnectionSession {
         return;
       }
     } else {
-      const ws = await this.deps.activeWorkspaceResolver.getForUser(this.user.id);
-      if (!ws) {
-        this.sendWithBackpressure({ type: "s.error", code: "no_active_workspace", message: "No active workspace" });
-        return;
+      // Resolve the target workspace: an explicit workspaceId (must be a member)
+      // wins over the user's active workspace.
+      let workspaceId: string;
+      if (msg.workspaceId) {
+        const member = await this.deps.workspaceMembersRepository.isMember(this.user.id, msg.workspaceId);
+        if (!member) {
+          this.sendWithBackpressure({ type: "s.error", code: "forbidden", message: "Not a member of this workspace" });
+          return;
+        }
+        workspaceId = msg.workspaceId;
+      } else {
+        const ws = await this.deps.activeWorkspaceResolver.getForUser(this.user.id);
+        if (!ws) {
+          this.sendWithBackpressure({ type: "s.error", code: "no_active_workspace", message: "No active workspace" });
+          return;
+        }
+        workspaceId = ws.id;
+      }
+      if (msg.templateId) {
+        const attached = await this.deps.workspaceTemplatesRepository.listForWorkspace(workspaceId);
+        if (!attached.some((t) => t.id === msg.templateId)) {
+          this.sendWithBackpressure({
+            type: "s.error",
+            code: "invalid_template",
+            message: "Template is not attached to this workspace",
+          });
+          return;
+        }
       }
       const now = Date.now();
-      const conv = await this.deps.convRepo.create({ workspaceId: ws.id, userId: this.user.id, createdAt: now, updatedAt: now });
+      const conv = await this.deps.convRepo.create({
+        workspaceId,
+        userId: this.user.id,
+        ...(msg.templateId ? { templateId: msg.templateId } : {}),
+        createdAt: now,
+        updatedAt: now,
+      });
       conversationId = conv.id;
       this.sendWithBackpressure({ type: "s.conversation.created", conversation: conv });
     }
 
     const history = await this.deps.msgRepo.listByConversation(conversationId);
     const historyMessages: ChatMessage[] = history.map((m) => ({ role: m.role, content: m.content }));
-    const clientMessages: ChatMessage[] = msg.messages.map((m) => {
-      const cm: ChatMessage = { role: m.role, content: m.content };
-      if (m.name !== undefined) cm.name = m.name;
-      if (m.toolCallId !== undefined) cm.toolCallId = m.toolCallId;
-      return cm;
-    });
-    const allMessages = [...historyMessages, ...clientMessages];
+    // The persisted transcript is canonical; the client resends prior turns,
+    // so only its newest message is appended to avoid duplicating history.
+    const last = msg.messages[msg.messages.length - 1]!;
+    const newMessage: ChatMessage = { role: last.role, content: last.content };
+    if (last.name !== undefined) newMessage.name = last.name;
+    if (last.toolCallId !== undefined) newMessage.toolCallId = last.toolCallId;
+    const allMessages = [...historyMessages, newMessage];
 
     const requestId = randomUUID();
     this.ownedRequestIds.add(requestId);
