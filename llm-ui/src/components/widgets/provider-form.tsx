@@ -9,6 +9,10 @@ import {
   type Provider,
   type ProviderScope,
 } from "@/lib/mock-data";
+import {
+  checkProviderConnection,
+  type CheckConnectionBody,
+} from "@/lib/providers-api";
 
 export type ProviderFormValues = {
   providerKey: string;
@@ -33,7 +37,7 @@ type Props = {
 };
 
 // Shared form used by both the Create and Edit provider screens. Self-contained:
-// owns provider catalog selection, simulated connection check, and validation.
+// owns provider catalog selection, live connection check, and validation.
 export function ProviderForm({ mode, initial, onSubmit, footer }: Props) {
   const [providerKey, setProviderKey] = useState<string>(
     initial?.providerKey ?? PROVIDER_CATALOG[0].key,
@@ -66,17 +70,28 @@ export function ProviderForm({ mode, initial, onSubmit, footer }: Props) {
   const canTest = !!catalog && host.trim().length > 0 && (!needsKey || rotating ? haveSecret : true);
   const canSubmit = !!catalog && !!model && host.trim().length > 0 && (mode === "edit" || haveSecret);
 
-  function runCheck() {
+  async function runCheck() {
     if (!canTest) return;
     setCheck({ kind: "checking" });
-    const t0 = performance.now();
-    window.setTimeout(() => {
-      const latency = Math.round(performance.now() - t0);
-      const ok = isLocal || secret.length >= 4 || mode === "edit";
-      setCheck(ok
-        ? { kind: "ok", latencyMs: latency }
-        : { kind: "fail", reason: "Khoá có vẻ không hợp lệ" });
-    }, 700);
+    try {
+      // Edit mode without a new key: check the stored provider (server
+      // decrypts its own key). Otherwise check the in-form credentials.
+      const useStored = mode === "edit" && initial && secret.trim().length === 0;
+      const result = await checkProviderConnection(
+        useStored
+          ? { providerId: initial.id, baseUrl: host.trim() || undefined }
+          : {
+              providerKind: providerKey as CheckConnectionBody["providerKind"],
+              baseUrl: host.trim() || undefined,
+              apiKey: secret.trim() || undefined,
+            },
+      );
+      setCheck(result.ok
+        ? { kind: "ok", latencyMs: result.latencyMs }
+        : { kind: "fail", reason: result.reason });
+    } catch (err) {
+      setCheck({ kind: "fail", reason: err instanceof Error ? err.message : "Kiểm tra thất bại" });
+    }
   }
 
   function submit(e: FormEvent) {

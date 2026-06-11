@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icons";
@@ -5,12 +6,9 @@ import {
   ProviderForm,
   type ProviderFormValues,
 } from "@/components/widgets/provider-form";
-import {
-  PROVIDER_CATALOG,
-  addProvider,
-  catalogByKey,
-  type Provider,
-} from "@/lib/mock-data";
+import type { Provider } from "@/lib/mock-data";
+import { createProvider } from "@/lib/providers-api";
+import { uiFormToCreateBody, wireToUiProvider } from "@/lib/provider-mapping";
 
 type Props = {
   open: boolean;
@@ -19,25 +17,21 @@ type Props = {
 };
 
 export function ProviderCreateDialog({ open, onClose, onCreated }: Props) {
-  function handleSubmit(values: ProviderFormValues) {
-    const catalog = catalogByKey(values.providerKey) ?? PROVIDER_CATALOG[0];
-    const isLocal = catalog.type === "local";
-    const next: Provider = {
-      id: `p_${catalog.key}_${Date.now().toString(36)}`,
-      providerKey: catalog.key,
-      name: catalog.name,
-      icon: catalog.icon,
-      status: isLocal ? "local" : "connected",
-      keyLabel: values.keyLabel,
-      masked: isLocal ? values.host : maskKey(values.key),
-      host: values.host,
-      model: values.model,
-      usage: 0,
-      scope: values.scope,
-    };
-    addProvider(next);
-    onCreated?.(next);
-    onClose();
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(values: ProviderFormValues) {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const wire = await createProvider(uiFormToCreateBody(values));
+      onCreated?.(wireToUiProvider(wire));
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể tạo provider");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -52,19 +46,22 @@ export function ProviderCreateDialog({ open, onClose, onCreated }: Props) {
         mode="create"
         onSubmit={handleSubmit}
         footer={({ canSubmit }) => (
-          <div className="flex items-center justify-end gap-2 border-t pt-4">
-            <Button type="button" variant="ghost" onClick={onClose}>Huỷ</Button>
-            <Button type="submit" disabled={!canSubmit}>
-              <Icon name="plus" className="h-4 w-4" /> Thêm provider
-            </Button>
+          <div className="space-y-3 border-t pt-4">
+            {error && (
+              <p className="flex items-center gap-1.5 text-xs text-destructive">
+                <Icon name="info" className="h-3.5 w-3.5 shrink-0" /> {error}
+              </p>
+            )}
+            <div className="flex items-center justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={onClose}>Huỷ</Button>
+              <Button type="submit" disabled={!canSubmit || submitting}>
+                <Icon name="plus" className="h-4 w-4" />
+                {submitting ? "Đang thêm…" : "Thêm provider"}
+              </Button>
+            </div>
           </div>
         )}
       />
     </Dialog>
   );
-}
-
-function maskKey(raw: string): string {
-  const tail = raw.slice(-4).padStart(4, "•");
-  return `sk-${"•".repeat(11)} ${tail}`;
 }

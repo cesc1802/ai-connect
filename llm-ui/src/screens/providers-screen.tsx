@@ -1,22 +1,21 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { IconTile } from "@/components/widgets/icon-tile";
 import { Icon } from "@/lib/icons";
 import { cn } from "@/lib/cn";
-import {
-  useProviders,
-  removeProvider,
-  type Provider,
-} from "@/lib/mock-data";
+import type { Provider } from "@/lib/mock-data";
+import { deleteProvider, listProviders } from "@/lib/providers-api";
+import { wireToUiProvider } from "@/lib/provider-mapping";
 import { ProviderDeleteDialog } from "@/components/widgets/provider-delete-dialog";
 import { ProviderCreateDialog } from "@/components/widgets/provider-create-dialog";
 import { ProviderEditDialog } from "@/components/widgets/provider-edit-dialog";
 import { ProviderDetailDialog } from "@/components/widgets/provider-detail-dialog";
 
 // Single-screen CRUD for providers. All flows (create / detail / edit / delete)
-// are dialogs; the URL stays at /providers throughout.
+// are dialogs; the URL stays at /providers throughout. The list is server
+// state: fetched on mount and refetched after every mutation.
 type DialogState =
   | { kind: "closed" }
   | { kind: "create" }
@@ -25,14 +24,47 @@ type DialogState =
   | { kind: "delete"; provider: Provider };
 
 export function ProvidersScreen() {
-  const providers = useProviders();
+  const [providers, setProviders] = useState<Provider[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogState>({ kind: "closed" });
-  const close = () => setDialog({ kind: "closed" });
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  function confirmDelete() {
+  const refetch = useCallback(async () => {
+    try {
+      const wires = await listProviders();
+      setProviders(wires.map(wireToUiProvider));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể tải danh sách provider");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refetch();
+  }, [refetch]);
+
+  const close = () => {
+    setDialog({ kind: "closed" });
+    setDeleteError(null);
+  };
+
+  async function confirmDelete() {
     if (dialog.kind !== "delete") return;
-    removeProvider(dialog.provider.id);
-    close();
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteProvider(dialog.provider.id);
+      close();
+      void refetch();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Không thể xoá provider");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   return (
@@ -47,7 +79,19 @@ export function ProvidersScreen() {
         }
       />
 
-      {providers.length === 0 ? (
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <Icon name="info" className="h-4 w-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <Button variant="outline" size="sm" onClick={() => { setLoading(true); void refetch(); }}>
+            Thử lại
+          </Button>
+        </div>
+      )}
+
+      {loading ? (
+        <LoadingGrid />
+      ) : !error && providers.length === 0 ? (
         <EmptyState onAdd={() => setDialog({ kind: "create" })} />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -66,6 +110,7 @@ export function ProvidersScreen() {
       <ProviderCreateDialog
         open={dialog.kind === "create"}
         onClose={close}
+        onCreated={() => void refetch()}
       />
       <ProviderDetailDialog
         open={dialog.kind === "detail"}
@@ -78,14 +123,27 @@ export function ProvidersScreen() {
         open={dialog.kind === "edit"}
         provider={dialog.kind === "edit" ? dialog.provider : null}
         onClose={close}
+        onSaved={() => void refetch()}
         onRequestDelete={(p) => setDialog({ kind: "delete", provider: p })}
       />
       <ProviderDeleteDialog
         open={dialog.kind === "delete"}
         provider={dialog.kind === "delete" ? dialog.provider : null}
         onClose={close}
-        onConfirm={confirmDelete}
+        onConfirm={() => void confirmDelete()}
+        busy={deleting}
+        error={deleteError}
       />
+    </div>
+  );
+}
+
+function LoadingGrid() {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="h-64 animate-pulse rounded-xl border bg-card" />
+      ))}
     </div>
   );
 }
@@ -123,8 +181,8 @@ function ProviderCard({
           <div className="text-xs text-muted-foreground">{isLocal ? "local" : "org-level"}</div>
         </div>
         <StatusBadge
-          status={isLocal ? "info" : "success"}
-          label={isLocal ? "Local" : "Đã kết nối"}
+          status={provider.status === "disabled" ? "default" : isLocal ? "info" : "success"}
+          label={provider.status === "disabled" ? "Tắt" : isLocal ? "Local" : "Đã kết nối"}
         />
       </div>
 

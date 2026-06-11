@@ -1,4 +1,3 @@
-import { useSyncExternalStore } from "react";
 
 export type OrgRoleKey = "owner" | "admin" | "member";
 export type WsRoleKey = "wsadmin" | "pm" | "ba" | "qa" | "dev";
@@ -96,7 +95,7 @@ export type Provider = {
   name: string;
   keyLabel: string;
   icon: string;
-  status: "connected" | "local";
+  status: "connected" | "local" | "disabled";
   masked: string;
   host: string;
   model: string;
@@ -157,36 +156,9 @@ const PROVIDER_SEED: Provider[] = [
   { id: "p_ollama", providerKey: "ollama", name: "Ollama", keyLabel: "local", icon: "hard-drive", status: "local", masked: "http://100.107.85.81:11434", host: "http://100.107.85.81:11434", model: "ollama/gemma3:4b", usage: 5, scope: "org" },
 ];
 
-// Module-level store so list / detail / edit screens stay in sync without
-// pulling in a state library. useProviders() subscribes via useSyncExternalStore.
-let _providers: Provider[] = [...PROVIDER_SEED];
-const _subs = new Set<() => void>();
-function _notify() { _subs.forEach((fn) => fn()); }
-function _subscribe(fn: () => void) { _subs.add(fn); return () => { _subs.delete(fn); }; }
-function _snapshot() { return _providers; }
-
-export const PROVIDERS = _providers; // back-compat: still readable as a constant
-
-export function getProviders(): Provider[] { return _providers; }
-export function providerById(id: string): Provider | undefined {
-  return _providers.find((p) => p.id === id);
-}
-export function addProvider(p: Provider) {
-  _providers = [..._providers, p];
-  _notify();
-}
-export function updateProvider(id: string, patch: Partial<Provider>) {
-  _providers = _providers.map((p) => (p.id === id ? { ...p, ...patch } : p));
-  _notify();
-}
-export function removeProvider(id: string) {
-  _providers = _providers.filter((p) => p.id !== id);
-  _notify();
-}
-
-export function useProviders(): Provider[] {
-  return useSyncExternalStore(_subscribe, _snapshot, _snapshot);
-}
+// The providers screen now reads from the real API (see lib/providers-api.ts);
+// this seed only feeds the overview and chat screens that still mock providers.
+export const PROVIDERS: Provider[] = PROVIDER_SEED;
 
 export type Template = {
   id: string;

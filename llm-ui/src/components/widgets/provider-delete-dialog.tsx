@@ -8,9 +8,11 @@ type Props = {
   provider: Provider | null;
   onClose: () => void;
   onConfirm: () => void;
+  busy?: boolean;
+  error?: string | null;
 };
 
-export function ProviderDeleteDialog({ open, provider, onClose, onConfirm }: Props) {
+export function ProviderDeleteDialog({ open, provider, onClose, onConfirm, busy, error }: Props) {
   return (
     <Dialog
       open={open}
@@ -20,8 +22,8 @@ export function ProviderDeleteDialog({ open, provider, onClose, onConfirm }: Pro
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Huỷ</Button>
-          <Button variant="destructive" onClick={onConfirm}>
-            <Icon name="trash-2" className="h-4 w-4" /> Xoá
+          <Button variant="destructive" onClick={onConfirm} disabled={busy}>
+            <Icon name="trash-2" className="h-4 w-4" /> {busy ? "Đang xoá…" : "Xoá"}
           </Button>
         </>
       }
@@ -31,6 +33,11 @@ export function ProviderDeleteDialog({ open, provider, onClose, onConfirm }: Pro
         <span className="font-semibold">{provider?.name}</span>? Các phiên đang dùng
         provider này có thể bị gián đoạn.
       </p>
+      {error && (
+        <p className="mt-3 flex items-center gap-1.5 text-xs text-destructive">
+          <Icon name="info" className="h-3.5 w-3.5 shrink-0" /> {error}
+        </p>
+      )}
     </Dialog>
   );
 }

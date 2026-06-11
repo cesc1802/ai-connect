@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -16,7 +16,6 @@ type Props = {
 };
 
 export function ProviderDetailDialog({ open, provider, onClose, onEdit, onDelete }: Props) {
-  const [revealed, setRevealed] = useState(false);
   if (!provider) return null;
   const isLocal = provider.status === "local";
   const catalog = catalogByKey(provider.providerKey);
@@ -37,8 +36,8 @@ export function ProviderDetailDialog({ open, provider, onClose, onEdit, onDelete
       description={
         <span className="inline-flex items-center gap-2">
           <StatusBadge
-            status={isLocal ? "info" : "success"}
-            label={isLocal ? "Local" : "Đã kết nối"}
+            status={provider.status === "disabled" ? "default" : isLocal ? "info" : "success"}
+            label={provider.status === "disabled" ? "Tắt" : isLocal ? "Local" : "Đã kết nối"}
           />
           <span className="text-muted-foreground">
             · {isLocal ? "Endpoint nội bộ" : "Khoá tổ chức"}
@@ -86,18 +85,9 @@ export function ProviderDetailDialog({ open, provider, onClose, onEdit, onDelete
           <Row
             icon={isLocal ? "hard-drive" : "key-round"}
             label={isLocal ? "Endpoint" : "API Key"}
-            action={!isLocal ? (
-              <button
-                type="button"
-                onClick={() => setRevealed((v) => !v)}
-                className="text-2xs font-medium text-primary hover:underline"
-              >
-                {revealed ? "Ẩn" : "Hiện"}
-              </button>
-            ) : undefined}
           >
             <code className="block truncate font-mono text-xs">
-              {isLocal ? provider.host : (revealed ? "sk-live-2f9a4c71e6b8d053" : provider.masked)}
+              {isLocal ? provider.host : provider.masked}
             </code>
           </Row>
         </Card>
