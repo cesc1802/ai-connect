@@ -68,6 +68,11 @@ import type { WorkspaceProvidersRepository } from "./workspace/workspace-provide
 import { DrizzleWorkspaceProvidersRepository } from "./workspace/drizzle-workspace-providers-repository.js";
 import type { WorkspaceTemplatesRepository } from "./workspace/workspace-templates-repository.js";
 import { DrizzleWorkspaceTemplatesRepository } from "./workspace/drizzle-workspace-templates-repository.js";
+import { DrizzleUsersRepository } from "./users/users-repo.js";
+import {
+  DefaultUsersService,
+  type UsersService,
+} from "./users/users-service.js";
 import { ChatHandler } from "./chat-v2/chat-handler.js";
 
 export interface AppContainer {
@@ -79,6 +84,7 @@ export interface AppContainer {
   authService: AuthService;
   jwtService: JwtService;
   auditEmitter: AuditEmitter;
+  usersService: UsersService;
   orgUsersService: OrgUsersService;
   orgTemplateService: OrgTemplateService;
   orgProvidersService: OrgProvidersService;
@@ -144,6 +150,8 @@ export async function buildContainer(
     config.JWT_EXPIRES_IN
   );
   const auditEmitter = new StdoutAuditEmitter(logger);
+  const usersRepo = new DrizzleUsersRepository(dbClient);
+  const usersService = new DefaultUsersService(usersRepo);
   const orgUsersRepo = new InMemoryOrgUsersRepository(seedOrgUsers());
   const orgUsersService = new DefaultOrgUsersService(
     orgUsersRepo,
@@ -226,6 +234,7 @@ export async function buildContainer(
     authService,
     jwtService,
     auditEmitter,
+    usersService,
     orgUsersService,
     orgTemplateService,
     orgProvidersService,

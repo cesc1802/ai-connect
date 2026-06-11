@@ -10,6 +10,7 @@ import {
 import { createActiveWorkspaceRoutes } from "./workspace/active-workspace-routes.js";
 import { createWorkspaceRoutes } from "./workspace/workspace-routes.js";
 import { createPromptTemplatesRoutes } from "./workspace/prompt-templates-routes.js";
+import { createUsersRoutes } from "./users/users-routes.js";
 import { createOrgUsersRoutes } from "./admin/org/users-routes.js";
 import { createOrgTemplatesRouter } from "./admin/org/templates-routes.js";
 import { createOrgProvidersRoutes } from "./admin/org/providers-routes.js";
@@ -72,6 +73,7 @@ export function createApp(container: AppContainer): Express {
     requireAuth,
     createPromptTemplatesRoutes(container.workspaceTemplatesRepository),
   );
+  app.use("/users", requireAuth, createUsersRoutes(container));
   app.use(
     "/admin/org/users",
     requireAuth,

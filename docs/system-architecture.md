@@ -599,12 +599,19 @@ llm-http
 
 **Workspace Detail Feature (Members / Templates / Providers Tabs):**
 
-**Overview:** Workspace admins manage members, attach prompt templates, and configure providers from a detail screen. Org admins manage the shared prompt-template library via a dedicated templates screen.
+**Overview:** Workspace admins manage members, attach prompt templates, and configure providers from a detail screen. Org admins manage the shared prompt-template library via a dedicated templates screen. All users can view the org-wide members directory scoped by role.
 
 **Workspace Detail Feature Scope:**
 - Members: Add/remove users, assign workspace-scoped roles (wsadmin, pm, ba, qa, dev)
 - Templates: Attach/detach organization prompt templates to workspace (admin-only mutations)
 - Providers: Enable/disable LLM providers at workspace level (admin-only mutations)
+
+**Org Users Directory (GET /users):**
+- Admin role: See all users in the organization
+- Non-admin (member) role: See only users sharing ≥1 workspace with caller (via `user_workspaces` table)
+- Caller always visible in results even with 0 workspace memberships
+- Response: `{users: [{id, username, role}]}` (no pagination, no email/status/workspace columns)
+- 401 if no token; 200 otherwise
 
 **Org Template Library CRUD Scope (full admin-only):**
 - Create: POST title (1–80), category (1–40), icon (1–40), description (1–280), body (≤8000, optional/nullable)
@@ -615,6 +622,8 @@ llm-http
 
 **Nested Resource Architecture:**
 ```
+/users                      → GET (role-scoped directory)
+
 /prompt-templates            → GET (any auth), POST/PATCH/DELETE (admin-only, full CRUD)
 
 /workspaces/:id/
@@ -626,14 +635,39 @@ llm-http
 
 **Key Implementation Details:**
 
-*Database Layer:*
+*Users API (Database Layer):*
+- `users` table: System users with id, username, system role
+- `user_workspaces` table: User-workspace membership for co-workspace visibility
+- `UsersRepository` interface: listAll() (admin), listCoWorkspaceUsers(callerId) (members)
+- `DrizzleUsersRepository`: Postgres-backed; listCoWorkspaceUsers uses inner join on `user_workspaces` to find shared workspaces, returns union of shared + caller
+- `InMemoryUsersRepository`: Test double with memberships Map
+
+*Users API (HTTP Layer):*
+- `users-routes.ts`: Single GET / endpoint; extracts caller role from req.user; delegates to usersService
+- `users-service.ts`: DefaultUsersService enforces role-based dispatch: admin → listAll(); else → listCoWorkspaceUsers()
+- Mounted at: `app.use("/users", requireAuth, createUsersRoutes(container))`
+- Response format: `{users: [{id: string, username: string, role: SystemRole}]}`
+
+*Users API (Frontend Layer):*
+- `lib/users-api.ts`: `ApiUser` type; `listUsers()` Fetch client calling GET /users
+- `screens/members-screen.tsx`: "Thành viên" directory screen rewritten to use real API
+  - Loading/error/ready state machine
+  - Client-side search by username (toLowerCase)
+  - Client-side role filter (all/admin/member)
+  - Avatar with stable hue per user id (hash-based)
+  - RoleBadge display
+  - Monotonic sequence guard for race-free concurrent loads
+  - Removed: Email, Status, Workspaces columns (not in API)
+  - Placeholder: "Mời" (Invite) button non-functional
+
+*Template Library (Database & HTTP Layer):*
 - `promptTemplates` table: Org-wide mutable library (title, category, icon, description, body nullable, author_name, uses counter, slug unique)
 - Migration: `0003_prompt_template_body.sql` adds nullable `body` text column
 - `workspaceTemplates` join: workspace_id + template_id composite PK with cascade delete (deleting template → detach from all workspaces)
 - All endpoints use Drizzle ORM repositories with role-aware access control
 - `WorkspaceTemplatesRepository` gains `createTemplate`, `updateTemplate`, `deleteTemplate` + `TemplateInUseError` exception
 
-*HTTP Layer:*
+*Template Library (HTTP Layer):*
 - `prompt-templates-routes.ts`: Full CRUD router (GET org library any-auth, POST/PATCH/DELETE admin-only); returns 201 on create, 404 on missing, 409 on FK constraint
 - Members/Providers/Templates routes mounted as nested routers in `workspace-by-id-routes.ts`
 - Access control: reads by members (404 for non-members), mutations by admin-only
@@ -641,7 +675,7 @@ llm-http
 - Zod validation: title/category/icon/description ranges, body ≤8000, blank body normalized to null, PATCH requires ≥1 field
 - 404 leak-safe: non-member workspace queries return 404 not 403
 
-*Frontend Layer:*
+*Template Library (Frontend Layer):*
 - Org template admin screen: `templates-screen.tsx` (list, search by title/description, client-side paging 9/page, create/edit dialogs, delete confirms)
 - Workspace detail screen: `workspace-detail-screen.tsx` (Members/Templates/Providers/Settings 4-tab interface)
 - Template management components: `template-card.tsx` (admin edit UI), `template-dialog.tsx` (create/edit with live preview + 12-icon picker + mono body textarea), `template-delete-dialog.tsx` (delete confirm with 409 error inline)

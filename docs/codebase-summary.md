@@ -606,6 +606,7 @@ llm-http/src/
 
 *New HTTP Endpoints (all under requireAuth):*
 - `GET /prompt-templates` → {templates:[...]} (org library, any authenticated user)
+- `GET /users` → {users:[{id, username, role}]} (role-scoped: admin sees all users, member sees users sharing ≥1 workspace, caller always included even with 0 memberships; 401 without token; no pagination)
 - `GET /workspaces/:id/members` → {members:[{userId, username, wsRoles[], orgRole}]} (member-scoped, 404 for non-members)
 - `GET /workspaces/:id/members/candidates` (admin-only, users not yet in workspace)
 - `POST /workspaces/:id/members` {userId, roles[]} → 201; 409 member_exists; roles deduped via zod transform
@@ -613,7 +614,21 @@ llm-http/src/
 - `GET /workspaces/:id/providers` → {providers:[{providerId, name, keyLabel, icon, enabled}]} (member-scoped)
 - `PATCH /workspaces/:id/providers/:providerId` {enabled} (admin-only)
 - `GET /workspaces/:id/templates` (member-scoped); `POST` {templateId} → 201 (409 already attached); `DELETE .../templates/:templateId` → 204
-- Implementation: workspace-members-routes.ts, workspace-providers-routes.ts, workspace-templates-routes.ts + repository layers; mounted in workspace-by-id-routes.ts
+- Implementation: users-routes.ts (mounted at /users), workspace-members-routes.ts, workspace-providers-routes.ts, workspace-templates-routes.ts + repository layers; members/providers/templates routers mounted in workspace-by-id-routes.ts
+
+**Role-Scoped Users API:**
+
+*Backend Layer (`llm-http/src/users/`):*
+- `users-routes.ts`: Single GET / endpoint returning `{users:[{id, username, role}]}`; mounts under `app.use("/users", requireAuth, createUsersRoutes(container))`
+- `users-repo.ts`: `UsersRepository` interface (listAll, listCoWorkspaceUsers) with two implementations:
+  - `DrizzleUsersRepository`: Postgres-backed via Drizzle ORM; listAll() returns all users; listCoWorkspaceUsers(callerId) returns users sharing ≥1 workspace via `user_workspaces` table, caller always included even if 0 memberships
+  - `InMemoryUsersRepository`: Test double for unit tests
+- `users-service.ts`: `DefaultUsersService` layer enforcing role-based scoping: admin role → listAll(); non-admin → listCoWorkspaceUsers(callerId)
+- Container: `usersRepo` (DrizzleUsersRepository), `usersService` (DefaultUsersService) instantiated in `container.ts`
+
+*Frontend Layer (`llm-ui/src/*):*
+- `lib/users-api.ts`: `ApiUser` type (id, username, role); `listUsers()` Fetch client calling GET /users
+- `screens/members-screen.tsx` ("Thành viên"): Rewritten to use real API (via listUsers()). Features: loading/error/ready states, client-side username search (toLowerCase), admin/member role filter buttons, role badge display, avatar with stable hue per user id, "Mời" invite button placeholder (non-functional). Removed: Email column, Status column, Workspaces column (not in API response). Uses monotonic sequence guard for race-free load.
 
 *New Frontend Components (llm-ui/src/components/workspace/*):*
 - `workspace-detail-screen.tsx`: 4-tab screen (Members/Templates/Providers/Settings)
