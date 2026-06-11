@@ -484,9 +484,13 @@ HTTP/WebSocket server providing REST API and real-time streaming interface to th
 **Files:**
 ```
 llm-http/src/
-├── providers/                    # Provider configuration from DB
+├── providers/                    # Provider management API + DB config source
+│   ├── providers-routes.ts      # REST CRUD endpoints (org-admin-only)
+│   ├── providers-route-schemas.ts # Zod validation (create, update, check, rotate)
+│   ├── connection-checker.ts    # Live connection probe (5s timeout, no-log keys)
 │   ├── db-provider-config-source.ts # Lazy-load DB source for gateway
-│   └── __tests__/               # Provider config tests
+│   ├── __tests__/               # Provider routes + config source tests
+│   └── provider-lifecycle.e2e.test.ts # End-to-end provider CRUD + check
 │
 ├── auth/                         # Authentication layer
 │   ├── jwt-service.ts           # JWT signing/verification
@@ -566,8 +570,21 @@ llm-http/src/
 - Ports and adapters for testability
 - **Lazy-load provider config from DB** via `DbProviderConfigSource` (TTL refresh-on-use, diffs before swap, graceful in-flight protection)
 
-**Provider Configuration (Lazy Load):**
-- New `DbProviderConfigSource` in `llm-http/src/providers/`
+**Provider Management:**
+
+*Provider Registration (CRUD API):*
+- `GET /providers` — org admin lists all provider instances (includes disabled, redacts keys)
+- `GET /providers/catalog` — any authenticated user lists available provider kinds (anthropic, openai, ollama, minimax, google, azure-openai, custom) with icon/models metadata
+- `POST /providers/check` — test live connection (5s timeout, proves credentials work before persist, key stays in header)
+- `POST /providers` — org admin creates new provider instance with encrypted key storage (409 duplicate_name)
+- `PATCH /providers/:id` — org admin updates name/baseUrl/enabled flag (409 duplicate_name)
+- `POST /providers/:id/rotate-key` — org admin replaces API key with new one
+- `DELETE /providers/:id` — org admin removes provider (409 if in_use by workspace/gateway)
+- Implementation: `src/providers/providers-routes.ts` (routes), `src/providers/providers-route-schemas.ts` (Zod validation), `src/providers/connection-checker.ts` (5s probe via HTTP header-only auth)
+- Service layer reuses `OrgProvidersService` + `DrizzleProvidersRepository` (shared with legacy `/admin/org/providers`)
+
+*Provider Configuration (Lazy Load for Gateway):*
+- `DbProviderConfigSource` in `llm-http/src/providers/db-provider-config-source.ts`
 - Queries `providers` ⋈ `provider_catalogs` for enabled rows (keyed by catalog name)
 - Decrypts API keys via `ApiKeyVault` (AES-256-GCM using `PROVIDER_KEY_VAULT_KEY`)
 - Handles unsupported kinds (google, azure-openai, custom) with skip+warn
@@ -577,7 +594,7 @@ llm-http/src/
 - **TTL refresh:** default 60s (floored to 1s), refresh-on-use not polling
 - **Graceful swap:** config diff + unchanged providers keep circuit-breaker; displaced instances disposed after `streamIdleTimeoutMs`
 - **Error handling:** first load failure → CONFIG_SOURCE_ERROR; later failures → keep last good config + `onSourceError` callback
-- **Boot with zero providers:** non-fatal warning logged; chat fails gracefully until provider created
+- **Boot with zero providers:** non-fatal warning logged; chat fails gracefully until provider created via `/providers` API
 
 **Event-Driven Architecture:**
 - EventBus pub/sub system for decoupled message flow

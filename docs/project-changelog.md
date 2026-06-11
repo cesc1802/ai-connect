@@ -8,6 +8,48 @@ This document records significant changes, features, and fixes across the LLM Ga
 
 ## [Unreleased] - 2026-06-11
 
+### llm-http v0.0.4 (Feature Release)
+
+**Provider CRUD REST API (`/providers`)**
+
+New org-admin-only REST endpoints for managing LLM provider instances with live connection validation:
+
+**Endpoints:**
+- `GET /providers` — List all org providers (includes disabled, redacts API keys)
+- `GET /providers/catalog` — List provider catalog (kind registry with models, icons, baseUrl requirement)
+- `POST /providers/check` — Test live connection (5s timeout, API key in header only, no persist)
+- `POST /providers` — Create provider instance (201, validates kind/name, encrypts key)
+- `PATCH /providers/:id` — Update name/baseUrl/enabled (admin-only, 409 on duplicate name)
+- `POST /providers/:id/rotate-key` — Replace API key with new one
+- `DELETE /providers/:id` — Delete provider (204, 409 if in-use by workspace/gateway)
+
+**Architecture:**
+- Connection checker probes endpoint with 5-second timeout
+- API keys travel in headers only (never in URL, never logged)
+- Separate probe strategy per kind (keyed endpoint for hosted; reachability-only for self-hosted)
+- Reuses existing `OrgProvidersService` + `DrizzleProvidersRepository`
+- Legacy `/admin/org/providers` routes remain unchanged
+- Org-admin role enforcement via `createRequireOrgAdmin` middleware
+
+**Database Impact:**
+- New `provider_catalogs` table seeded with 7 kinds (anthropic, openai, ollama, minimax, google, azure-openai, custom)
+- `providers.default_model` nullable text column (for org/workspace-scoped model defaults, future use)
+- `providers.scope` enum (default 'org') for org vs workspace-scoped overrides
+
+**Frontend Integration (llm-ui):**
+- `src/lib/providers-api.ts` — Type-safe Fetch client (list, check, create, update, rotate, delete)
+- `src/lib/provider-mapping.ts` — Kind-to-icon, kind-to-label mappings (derived from catalog)
+- Providers screen removed mock store; now uses real API with server-state fetch-on-mount
+- Loading/error/empty states; 'disabled' status badge for isEnabled=false
+
+**Error Codes:**
+- 400 `invalid_body` — validation failed (name length, kind unknown, key constraints)
+- 401 — missing/invalid auth token
+- 403 `insufficient_role` — non-org-admin user
+- 404 `provider_not_found` — provider not in org
+- 409 `duplicate_name` — provider name already exists in org
+- 409 `provider_in_use` — cannot delete; provider has active workspaces or is in-flight
+
 ### llm-gateway v1.1.0 (Feature Release)
 
 **Lazy-Load Provider Configuration with DB Source**
@@ -185,6 +227,7 @@ Core LLM provider abstraction with resilience patterns.
 
 | Date | Package | Version | Type | Summary |
 |------|---------|---------|------|---------|
+| 2026-06-11 | llm-http | 0.0.4 | Feature | Provider CRUD REST API + connection checker (5s timeout) |
 | 2026-06-11 | llm-gateway | 1.1.0 | Feature | ProviderConfigSource + TTL refresh + graceful swap |
 | 2026-06-11 | llm-http | 0.0.3 | Feature | **BREAKING** Lazy-load DB providers (env vars removed) |
 | 2026-06-10 | llm-http | 0.0.2 | Feature | Workspace paging & CRUD (GET/POST/PATCH/DELETE) |

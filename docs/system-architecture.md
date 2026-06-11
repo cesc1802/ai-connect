@@ -1182,7 +1182,154 @@ interface UserRecord {
 
 ---
 
-### Layer 7: Dependency Injection Layer (container.ts)
+### Layer 6: Provider Management API (`/providers`)
+
+**Status:** ✅ Implemented (June 11, 2026)
+
+**REST Endpoint:** Org-admin-only resource for CRUD operations on LLM provider instances.
+
+**Responsibility:**
+- Register new provider instances with API keys (encrypted and stored in DB)
+- Enable/disable provider availability
+- Test live connections with 5-second timeout
+- Rotate provider API keys
+- Delete providers if not in use
+
+**Request Authentication:**
+- Mounted behind `requireAuth` + `createRequireOrgAdmin` middleware
+- Access control: `POST /providers` (create) requires org admin role
+- Pre-flight check via connection test proves credentials work before persisting
+
+**Endpoints (all org-admin-only, unless stated):**
+
+| Method | Path | Purpose | Status |
+|--------|------|---------|--------|
+| GET | `/providers` | List org providers (all, including disabled) | 200 \| 401 |
+| GET | `/providers/catalog` | List provider catalog (available kinds + metadata) | 200 \| 401 |
+| POST | `/providers/check` | Test live connection (5s timeout, no persist) | 200 \| 400 \| 401 |
+| POST | `/providers` | Create new provider instance | 201 \| 400 \| 401 \| 403 \| 409 |
+| PATCH | `/providers/:id` | Update provider (name, baseUrl, enabled) | 200 \| 400 \| 401 \| 403 \| 404 \| 409 |
+| POST | `/providers/:id/rotate-key` | Replace API key with new one | 200 \| 400 \| 401 \| 403 \| 404 |
+| DELETE | `/providers/:id` | Remove provider (fails if in-use) | 204 \| 401 \| 403 \| 404 \| 409 |
+
+**Request/Response Format:**
+
+**POST /providers (Create)**
+```json
+{
+  "name": "anthropic-prod",
+  "kind": "anthropic",
+  "apiKey": "sk-ant-...",
+  "baseUrl": null
+}
+```
+Response (201):
+```json
+{
+  "id": "prov_xxx",
+  "orgId": "org_yyy",
+  "name": "anthropic-prod",
+  "kind": "anthropic",
+  "apiKey": "<redacted>",
+  "baseUrl": null,
+  "enabled": true,
+  "createdAt": "2026-06-11T12:34:56Z",
+  "updatedAt": "2026-06-11T12:34:56Z"
+}
+```
+
+**GET /providers/catalog**
+```json
+{
+  "catalog": [
+    {
+      "kind": "anthropic",
+      "label": "Anthropic Claude",
+      "icon": "anthropic",
+      "requiresBaseUrl": false,
+      "models": ["claude-opus", "claude-sonnet"]
+    },
+    {
+      "kind": "openai",
+      "label": "OpenAI",
+      "icon": "openai",
+      "requiresBaseUrl": false,
+      "models": ["gpt-4", "gpt-3.5-turbo"]
+    },
+    {
+      "kind": "ollama",
+      "label": "Ollama",
+      "icon": "ollama",
+      "requiresBaseUrl": true,
+      "models": []
+    }
+  ]
+}
+```
+
+**POST /providers/check (Connection Test)**
+```json
+{
+  "kind": "anthropic",
+  "apiKey": "sk-ant-...",
+  "baseUrl": null
+}
+```
+Response (200):
+```json
+{
+  "ok": true,
+  "latencyMs": 245
+}
+```
+Response (400 on failure):
+```json
+{
+  "ok": false,
+  "reason": "Invalid API key or service unreachable"
+}
+```
+
+**Error Responses:**
+
+| Code | Status | Cause |
+|------|--------|-------|
+| `invalid_body` | 400 | Validation failed (name, kind, apiKey constraints) |
+| `missing_org` | 401 | User has no org context |
+| `insufficient_role` | 403 | User not org admin |
+| `provider_not_found` | 404 | Provider with given ID not in org |
+| `duplicate_name` | 409 | Provider name already exists in org |
+| `provider_in_use` | 409 | Cannot delete; provider has active workspaces/configs |
+
+**Implementation Details:**
+
+**Connection Checker (`src/providers/connection-checker.ts`):**
+- Timeout: 5 seconds (CHECK_TIMEOUT_MS)
+- API keys travel only in headers (never in URL or logged)
+- Per-provider probe strategy:
+  - **Hosted kinds** (anthropic, openai, google, minimax): Call cheap auth endpoint (e.g. GET /v1/models)
+  - **Self-hosted** (ollama, custom): Reachability test only (HEAD or GET /)
+  - **Azure/Custom:** baseUrl required; fall back to HEAD probe if no auth endpoint known
+- Result: `{ ok: true, latencyMs: number }` or `{ ok: false, reason: string }`
+
+**Provider Registration Flow:**
+1. Client calls `POST /providers/check` with kind, apiKey, baseUrl (optional)
+2. Connection checker probes endpoint with 5s timeout; API key stays in headers
+3. If successful, client calls `POST /providers` with same credentials
+4. Server validates against catalog, encrypts key via `ApiKeyVault`, persists to DB
+5. Next gateway load (within TTL) picks up new provider
+6. Legacy `/admin/org/providers` routes unchanged; new `/providers` reuses OrgProvidersService + DrizzleProvidersRepository
+
+**Security:**
+- API keys encrypted at rest (AES-256-GCM via PROVIDER_KEY_VAULT_KEY)
+- Keys never logged or echoed in responses
+- Keys transmitted in HTTP headers only (not URL, not request body logged)
+- 5-second probe timeout prevents hanging connections
+- Org-admin role enforcement prevents unauthorized access
+
+---
+
+### Layer 7: Data Access Layer (auth/)
 
 **Container Interface:**
 
