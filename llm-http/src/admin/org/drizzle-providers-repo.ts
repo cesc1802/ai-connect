@@ -7,6 +7,8 @@ import {
 import type { ProviderKind } from "./provider-kind.js";
 import type {
   CreateProviderInput,
+  ProviderCatalogEntry,
+  ProviderScope,
   ProvidersRepository,
   StoredProvider,
   UpdateProviderPatch,
@@ -43,6 +45,8 @@ interface JoinedRow {
   apiKeyRef: string | null;
   lastFour: string;
   enabled: boolean;
+  defaultModel: string | null;
+  scope: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -65,6 +69,8 @@ export class DrizzleProvidersRepository implements ProvidersRepository {
         apiKeyRef: providers.apiKeyRef,
         lastFour: providers.lastFour,
         enabled: providers.enabled,
+        defaultModel: providers.defaultModel,
+        scope: providers.scope,
         createdAt: providers.createdAt,
         updatedAt: providers.updatedAt,
       })
@@ -109,6 +115,8 @@ export class DrizzleProvidersRepository implements ProvidersRepository {
             apiKeyRef: input.encryptedKey,
             lastFour: input.lastFour,
             enabled: true,
+            defaultModel: input.defaultModel ?? null,
+            scope: input.scope ?? "org",
           })
           .returning();
         return inserted[0]!;
@@ -131,6 +139,8 @@ export class DrizzleProvidersRepository implements ProvidersRepository {
         apiKeyRef: row.apiKeyRef,
         lastFour: row.lastFour,
         enabled: row.enabled,
+        defaultModel: row.defaultModel,
+        scope: row.scope,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       },
@@ -153,6 +163,8 @@ export class DrizzleProvidersRepository implements ProvidersRepository {
           ...(patch.encryptedKey !== undefined && { apiKeyRef: patch.encryptedKey }),
           ...(patch.lastFour !== undefined && { lastFour: patch.lastFour }),
           ...(patch.baseUrl !== undefined && { baseUrl: patch.baseUrl }),
+          ...(patch.defaultModel !== undefined && { defaultModel: patch.defaultModel }),
+          ...(patch.scope !== undefined && { scope: patch.scope }),
           updatedAt: new Date(),
         })
         .where(eq(providers.id, id))
@@ -187,6 +199,17 @@ export class DrizzleProvidersRepository implements ProvidersRepository {
     }
     if (deleted.length === 0) throw new Error(`provider ${id} not found`);
   }
+
+  async listCatalog(): Promise<ProviderCatalogEntry[]> {
+    return this.client.db
+      .select({
+        name: providerCatalogs.name,
+        host: providerCatalogs.host,
+        models: providerCatalogs.models,
+      })
+      .from(providerCatalogs)
+      .orderBy(asc(providerCatalogs.name));
+  }
 }
 
 type Tx = Parameters<Parameters<DbClient["db"]["transaction"]>[0]>[0];
@@ -219,6 +242,8 @@ function toStored(row: JoinedRow, orgId: string): StoredProvider {
     encryptedKey: row.apiKeyRef ?? "",
     lastFour: row.lastFour,
     baseUrl: row.baseUrl,
+    defaultModel: row.defaultModel,
+    scope: row.scope === "select" ? "select" : ("org" satisfies ProviderScope),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

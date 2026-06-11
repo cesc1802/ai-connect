@@ -14,6 +14,7 @@ import { createUsersRoutes } from "./users/users-routes.js";
 import { createOrgUsersRoutes } from "./admin/org/users-routes.js";
 import { createOrgTemplatesRouter } from "./admin/org/templates-routes.js";
 import { createOrgProvidersRoutes } from "./admin/org/providers-routes.js";
+import { createProvidersRoutes } from "./providers/providers-routes.js";
 import { createWsMembersRoutes } from "./admin/workspace/members-routes.js";
 import { createWsRolesRoutes } from "./admin/workspace/roles-routes.js";
 import { createWsProvidersRoutes } from "./admin/workspace/ws-providers-routes.js";
@@ -121,6 +122,16 @@ export function createApp(container: AppContainer): Express {
     requireAuth,
     createRequireWorkspaceAdmin(),
     createWsQuotasRoutes(container.wsQuotasService),
+  );
+  app.use(
+    "/providers",
+    requireAuth,
+    createRequireOrgAdmin(),
+    createProvidersRoutes({
+      service: container.orgProvidersService,
+      repo: container.orgProvidersRepo,
+      vault: container.apiKeyVault,
+    }),
   );
 
   app.use(createErrorHandler(container.logger, isProd));

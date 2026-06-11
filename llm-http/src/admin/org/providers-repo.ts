@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { ProviderKind } from "./provider-kind.js";
 
+export type ProviderScope = "org" | "select";
+
 export interface StoredProvider {
   id: string;
   orgId: string;
@@ -10,6 +12,8 @@ export interface StoredProvider {
   encryptedKey: string;
   lastFour: string;
   baseUrl: string | null;
+  defaultModel: string | null;
+  scope: ProviderScope;
   createdAt: string;
   updatedAt: string;
 }
@@ -21,6 +25,8 @@ export interface CreateProviderInput {
   encryptedKey: string;
   lastFour: string;
   baseUrl?: string | undefined;
+  defaultModel?: string | undefined;
+  scope?: ProviderScope | undefined;
 }
 
 export interface UpdateProviderPatch {
@@ -29,6 +35,14 @@ export interface UpdateProviderPatch {
   encryptedKey?: string | undefined;
   lastFour?: string | undefined;
   baseUrl?: string | undefined;
+  defaultModel?: string | undefined;
+  scope?: ProviderScope | undefined;
+}
+
+export interface ProviderCatalogEntry {
+  name: string;
+  host: string;
+  models: string[];
 }
 
 export interface ProvidersRepository {
@@ -38,10 +52,13 @@ export interface ProvidersRepository {
   create(input: CreateProviderInput): Promise<StoredProvider>;
   update(orgId: string, id: string, patch: UpdateProviderPatch): Promise<StoredProvider>;
   delete(orgId: string, id: string): Promise<void>;
+  listCatalog(): Promise<ProviderCatalogEntry[]>;
 }
 
 export class InMemoryProvidersRepository implements ProvidersRepository {
   private readonly rows = new Map<string, StoredProvider>();
+  /** Seedable catalog rows for tests; empty by default. */
+  readonly catalog: ProviderCatalogEntry[] = [];
 
   async listByOrg(orgId: string): Promise<StoredProvider[]> {
     return [...this.rows.values()]
@@ -82,6 +99,8 @@ export class InMemoryProvidersRepository implements ProvidersRepository {
       encryptedKey: input.encryptedKey,
       lastFour: input.lastFour,
       baseUrl: input.baseUrl ?? null,
+      defaultModel: input.defaultModel ?? null,
+      scope: input.scope ?? "org",
       createdAt: now,
       updatedAt: now,
     };
@@ -105,6 +124,8 @@ export class InMemoryProvidersRepository implements ProvidersRepository {
       }),
       ...(patch.lastFour !== undefined && { lastFour: patch.lastFour }),
       ...(patch.baseUrl !== undefined && { baseUrl: patch.baseUrl }),
+      ...(patch.defaultModel !== undefined && { defaultModel: patch.defaultModel }),
+      ...(patch.scope !== undefined && { scope: patch.scope }),
       updatedAt: new Date().toISOString(),
     };
     this.rows.set(id, updated);
@@ -115,5 +136,9 @@ export class InMemoryProvidersRepository implements ProvidersRepository {
     const existing = await this.findById(orgId, id);
     if (!existing) throw new Error(`provider ${id} not found`);
     this.rows.delete(id);
+  }
+
+  async listCatalog(): Promise<ProviderCatalogEntry[]> {
+    return [...this.catalog];
   }
 }

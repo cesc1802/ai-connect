@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Logger } from "../../logger.js";
 import { ApiKeyVault, lastFourOf } from "./api-key-vault.js";
 import type {
+  ProviderScope,
   ProvidersRepository,
   StoredProvider,
 } from "./providers-repo.js";
@@ -16,6 +17,8 @@ export interface WireProvider {
   hasKey: boolean;
   lastFour: string;
   baseUrl: string | null;
+  defaultModel: string | null;
+  scope: ProviderScope;
 }
 
 export interface ServiceActor {
@@ -28,12 +31,16 @@ export interface AddProviderInput {
   providerKind: ProviderKind;
   apiKey: string;
   baseUrl?: string | undefined;
+  defaultModel?: string | undefined;
+  scope?: ProviderScope | undefined;
 }
 
 export interface UpdateProviderInput {
   displayName?: string | undefined;
   isEnabled?: boolean | undefined;
   baseUrl?: string | undefined;
+  defaultModel?: string | undefined;
+  scope?: ProviderScope | undefined;
 }
 
 export interface RotateKeyInput {
@@ -72,6 +79,8 @@ function toWire(stored: StoredProvider): WireProvider {
     hasKey: stored.encryptedKey.length > 0,
     lastFour: stored.lastFour,
     baseUrl: stored.baseUrl,
+    defaultModel: stored.defaultModel,
+    scope: stored.scope,
   };
 }
 
@@ -95,6 +104,14 @@ function diffForUpdate(
   if (before.baseUrl !== after.baseUrl) {
     beforeDiff.baseUrl = before.baseUrl;
     afterDiff.baseUrl = after.baseUrl;
+  }
+  if (before.defaultModel !== after.defaultModel) {
+    beforeDiff.defaultModel = before.defaultModel;
+    afterDiff.defaultModel = after.defaultModel;
+  }
+  if (before.scope !== after.scope) {
+    beforeDiff.scope = before.scope;
+    afterDiff.scope = after.scope;
   }
   return { before: beforeDiff, after: afterDiff };
 }
@@ -132,6 +149,8 @@ export class OrgProvidersService {
       encryptedKey: encrypted,
       lastFour: input.apiKey ? lastFourOf(input.apiKey) : "",
       baseUrl: input.baseUrl,
+      defaultModel: input.defaultModel,
+      scope: input.scope,
     });
     const wire = toWire(stored);
     this.emitAudit({

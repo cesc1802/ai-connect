@@ -36,6 +36,13 @@
       "when": 1781160701583,
       "tag": "0004_provider_last_four",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1781172525713,
+      "tag": "0005_provider_default_model_scope_catalog_seed",
+      "breakpoints": true
     }
   ]
 }

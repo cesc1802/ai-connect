@@ -23,6 +23,7 @@ import { InMemoryOrgTemplateRepo } from "./admin/org/templates-repo.js";
 import { OrgTemplateService } from "./admin/org/templates-service.js";
 import { ApiKeyVault } from "./admin/org/api-key-vault.js";
 import { DrizzleProvidersRepository } from "./admin/org/drizzle-providers-repo.js";
+import type { ProvidersRepository } from "./admin/org/providers-repo.js";
 import { OrgProvidersService } from "./admin/org/providers-service.js";
 import {
   InMemoryWsMembersRepository,
@@ -87,6 +88,7 @@ export interface AppContainer {
   orgUsersService: OrgUsersService;
   orgTemplateService: OrgTemplateService;
   orgProvidersService: OrgProvidersService;
+  orgProvidersRepo: ProvidersRepository;
   wsMembersService: WsMembersService;
   wsProvidersService: WsProvidersService;
   wsTemplatesService: WsTemplatesService;
@@ -233,6 +235,7 @@ export async function buildContainer(
     orgUsersService,
     orgTemplateService,
     orgProvidersService,
+    orgProvidersRepo,
     wsMembersService,
     wsProvidersService,
     wsTemplatesService,

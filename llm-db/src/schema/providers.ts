@@ -14,6 +14,8 @@ export const providers = pgTable(
     apiKeyRef: text("api_key_ref"),
     lastFour: text("last_four").notNull().default(""),
     enabled: boolean("enabled").notNull().default(true),
+    defaultModel: text("default_model"),
+    scope: text("scope").notNull().default("org"),
     ...auditColumns,
   },
   (t) => ({
