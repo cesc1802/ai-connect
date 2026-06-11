@@ -2,20 +2,22 @@
 // state is owned by AuthProvider (auth-context.tsx); this module is the
 // persistence + read seam shared by the HTTP client and the WS client.
 //
-// Read priority: VITE_DEV_JWT env (dev override) → localStorage. Keeping the
-// env fallback lets the existing WS dev flow resolve a token without a login.
+// Read priority: localStorage (real login) → VITE_DEV_JWT env fallback. A
+// logged-in session must win over the dev token, otherwise a stale/expired
+// VITE_DEV_JWT shadows fresh credentials and every API call 401s. The env
+// fallback stays so the WS dev flow can resolve a token without a login.
 
 const STORAGE_KEY = "auth_token";
 
 export function getToken(): string | null {
-  const env = (import.meta.env.VITE_DEV_JWT as string | undefined)?.trim();
-  if (env) return env;
   try {
     const ls = window.localStorage.getItem(STORAGE_KEY)?.trim();
     if (ls) return ls;
   } catch {
     // SSR / disabled storage — no-op.
   }
+  const env = (import.meta.env.VITE_DEV_JWT as string | undefined)?.trim();
+  if (env) return env;
   return null;
 }
 
