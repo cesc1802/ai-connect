@@ -18,8 +18,13 @@ export function createMeDefaultModelRoutes(repo: ProvidersRepository): Router {
       }
 
       const providers = await repo.listByOrg(req.user.org);
+      // Mirrors the gateway's load rules: ollama is key-less and needs only
+      // a base URL; every other kind needs a stored API key.
       const usable = providers.find(
-        (p) => p.isEnabled && p.encryptedKey.length > 0 && p.defaultModel
+        (p) =>
+          p.isEnabled &&
+          p.defaultModel &&
+          (p.providerKind === "ollama" ? !!p.baseUrl : p.encryptedKey.length > 0)
       );
       res.json({ model: usable?.defaultModel ?? null });
     } catch (err) {

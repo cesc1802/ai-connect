@@ -103,10 +103,7 @@ describe("attachChatV2Server integration", () => {
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
   });
 
-  // The upgrade handler currently uses a dev-auth bypass that always resolves the
-  // seeded dev identity, so bad tokens are not rejected. Re-enable once real token
-  // verification is restored in authenticateUpgrade.
-  it.skip("rejects connection with invalid token", async () => {
+  it("rejects connection with invalid token", async () => {
     vi.mocked(mockJwtService.verify).mockImplementationOnce(() => {
       throw new Error("invalid");
     });

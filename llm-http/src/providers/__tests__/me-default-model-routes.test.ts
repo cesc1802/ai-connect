@@ -61,6 +61,38 @@ describe("me default model routes — GET /api/me/default-model", () => {
     expect(res.body).toEqual({ model: "gpt-4o" });
   });
 
+  it("treats a key-less ollama provider with a base URL as usable", async () => {
+    const res = await request(
+      makeApp([
+        provider({
+          providerKind: "ollama",
+          encryptedKey: "",
+          baseUrl: "http://localhost:11434",
+          defaultModel: "ollama/gemma3:4b",
+        }),
+      ])
+    ).get("/api/me/default-model");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ model: "ollama/gemma3:4b" });
+  });
+
+  it("skips an ollama provider without a base URL", async () => {
+    const res = await request(
+      makeApp([
+        provider({
+          providerKind: "ollama",
+          encryptedKey: "",
+          baseUrl: null,
+          defaultModel: "ollama/gemma3:4b",
+        }),
+      ])
+    ).get("/api/me/default-model");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ model: null });
+  });
+
   it("returns null when no provider is usable", async () => {
     const res = await request(
       makeApp([provider({ isEnabled: false })])
