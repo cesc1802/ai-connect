@@ -615,6 +615,7 @@ llm-http/src/
 **Client Message Types (v2):**
 - `c.chat.send`: Start streaming chat (conversationId optional, workspaceId required, templateId optional, messages with newest client message only)
   - workspaceId validated against user membership; returns s.error invalid_template if templateId not attached to target workspace
+  - Template-seeded conversations: template body injected as `system` message on every turn (resolved fresh via `getTemplate`, never persisted — template edits apply to future turns)
 - `c.chat.abort`: Cancel active stream by requestId
 - `c.ping`: Keepalive ping
 
