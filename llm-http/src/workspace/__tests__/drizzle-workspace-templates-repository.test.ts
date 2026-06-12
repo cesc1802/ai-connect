@@ -75,6 +75,14 @@ runIf("DrizzleWorkspaceTemplatesRepository", () => {
     expect(await repo.templateExists("00000000-0000-0000-0000-000000000000")).toBe(false);
   });
 
+  it("getTemplate returns the row for existing id and undefined for unknown", async () => {
+    const id = await seedTemplate("get-check");
+    const row = await repo.getTemplate(id);
+    expect(row?.id).toBe(id);
+    expect(row?.slug).toBe(`${SLUG_PREFIX_TMPL}get-check`);
+    expect(await repo.getTemplate("00000000-0000-0000-0000-000000000000")).toBeUndefined();
+  });
+
   it("attach adds a join row; listForWorkspace returns it", async () => {
     const wsId = await seedWorkspace("attach");
     const tmplId = await seedTemplate("attach-tmpl");

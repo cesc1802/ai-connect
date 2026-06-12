@@ -131,6 +131,15 @@ export class DrizzleWorkspaceTemplatesRepository
     return rows.length > 0;
   }
 
+  async getTemplate(templateId: string): Promise<TemplateRow | undefined> {
+    const [row] = await this.client.db
+      .select(templateColumns)
+      .from(promptTemplates)
+      .where(eq(promptTemplates.id, templateId))
+      .limit(1);
+    return row;
+  }
+
   async templateExists(templateId: string): Promise<boolean> {
     const [row] = await this.client.db
       .select({ id: promptTemplates.id })

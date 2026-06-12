@@ -42,6 +42,8 @@ export interface WorkspaceTemplatesRepository {
   deleteTemplate(id: string): Promise<boolean>;
   /** List templates attached to a specific workspace. */
   listForWorkspace(workspaceId: string): Promise<TemplateRow[]>;
+  /** Get a single template by id. Returns undefined when the id is unknown. */
+  getTemplate(templateId: string): Promise<TemplateRow | undefined>;
   /** Attach a template to a workspace. Throws TemplateAlreadyAttachedError when already attached. */
   attach(workspaceId: string, templateId: string): Promise<boolean>;
   /** Detach a template from a workspace. Returns false when not attached. */

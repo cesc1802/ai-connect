@@ -36,6 +36,7 @@ function createMockDeps(bus: EventBus<ChatEvent>): ConnectionSessionDeps {
     } as unknown as ConnectionSessionDeps["workspaceMembersRepository"],
     workspaceTemplatesRepository: {
       listForWorkspace: vi.fn().mockResolvedValue([]),
+      getTemplate: vi.fn().mockResolvedValue(undefined),
     } as unknown as ConnectionSessionDeps["workspaceTemplatesRepository"],
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as ConnectionSessionDeps["logger"],
   };
@@ -201,6 +202,113 @@ describe("ConnectionSession", () => {
         expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('"code":"invalid_template"'));
       });
       expect(deps.convRepo.create).not.toHaveBeenCalled();
+    });
+
+    it("prepends template body as system message when creating a conversation from a template", async () => {
+      const WS_UUID = "550e8400-e29b-41d4-a716-446655440010";
+      const TEMPLATE_UUID = "550e8400-e29b-41d4-a716-446655440011";
+      const template = { id: TEMPLATE_UUID, body: "You are a pirate." };
+      const newConv: Conversation = { id: "conv-new", workspaceId: WS_UUID, userId: user.id, templateId: TEMPLATE_UUID, createdAt: 1000, updatedAt: 1000 };
+      vi.mocked(deps.convRepo.create).mockResolvedValue(newConv);
+      vi.mocked(deps.msgRepo.listByConversation).mockResolvedValue([]);
+      vi.mocked(deps.workspaceTemplatesRepository.listForWorkspace).mockResolvedValue([
+        template as Awaited<ReturnType<typeof deps.workspaceTemplatesRepository.listForWorkspace>>[number],
+      ]);
+      vi.mocked(deps.workspaceTemplatesRepository.getTemplate).mockResolvedValue(
+        template as Awaited<ReturnType<typeof deps.workspaceTemplatesRepository.getTemplate>>
+      );
+
+      const session = new ConnectionSession(ws, user, deps);
+      session.start("conn-1");
+
+      ws.emit("message", JSON.stringify({
+        type: "c.chat.send",
+        workspaceId: WS_UUID,
+        templateId: TEMPLATE_UUID,
+        model: "gpt-4",
+        messages: [{ role: "user", content: "hello" }],
+      }));
+
+      await vi.waitFor(() => {
+        expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "chat.requested" }));
+      });
+
+      expect(deps.workspaceTemplatesRepository.getTemplate).toHaveBeenCalledWith(TEMPLATE_UUID);
+      const publishCall = publishSpy.mock.calls.find(
+        (call) => (call[0] as ChatEvent).type === "chat.requested"
+      );
+      const messages = (publishCall?.[0] as { messages: Array<{ role: string; content: string }> }).messages;
+      expect(messages[0]).toEqual({ role: "system", content: "You are a pirate." });
+      expect(messages[1]).toEqual(expect.objectContaining({ role: "user", content: "hello" }));
+    });
+
+    it("prepends template body as system message on later turns of a templated conversation", async () => {
+      const TEMPLATE_UUID = "550e8400-e29b-41d4-a716-446655440011";
+      const conv: Conversation = { id: CONV_UUID, workspaceId: "ws-test", userId: user.id, templateId: TEMPLATE_UUID, createdAt: 1000, updatedAt: 1000 };
+      const history: Message[] = [
+        { id: "msg-1", conversationId: CONV_UUID, role: "user", content: "prev message", createdAt: 900 },
+        { id: "msg-2", conversationId: CONV_UUID, role: "assistant", content: "prev reply", createdAt: 901 },
+      ];
+      vi.mocked(deps.convRepo.get).mockResolvedValue(conv);
+      vi.mocked(deps.msgRepo.listByConversation).mockResolvedValue(history);
+      vi.mocked(deps.workspaceTemplatesRepository.getTemplate).mockResolvedValue(
+        { id: TEMPLATE_UUID, body: "You are a pirate." } as Awaited<ReturnType<typeof deps.workspaceTemplatesRepository.getTemplate>>
+      );
+
+      const session = new ConnectionSession(ws, user, deps);
+      session.start("conn-1");
+
+      ws.emit("message", JSON.stringify({
+        type: "c.chat.send",
+        conversationId: CONV_UUID,
+        model: "gpt-4",
+        messages: [{ role: "user", content: "new message" }],
+      }));
+
+      await vi.waitFor(() => {
+        expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "chat.requested" }));
+      });
+
+      const publishCall = publishSpy.mock.calls.find(
+        (call) => (call[0] as ChatEvent).type === "chat.requested"
+      );
+      const messages = (publishCall?.[0] as { messages: Array<{ role: string; content: string }> }).messages;
+      expect(messages.map((m) => [m.role, m.content])).toEqual([
+        ["system", "You are a pirate."],
+        ["user", "prev message"],
+        ["assistant", "prev reply"],
+        ["user", "new message"],
+      ]);
+    });
+
+    it("omits system message when template body is empty", async () => {
+      const TEMPLATE_UUID = "550e8400-e29b-41d4-a716-446655440011";
+      const conv: Conversation = { id: CONV_UUID, workspaceId: "ws-test", userId: user.id, templateId: TEMPLATE_UUID, createdAt: 1000, updatedAt: 1000 };
+      vi.mocked(deps.convRepo.get).mockResolvedValue(conv);
+      vi.mocked(deps.msgRepo.listByConversation).mockResolvedValue([]);
+      vi.mocked(deps.workspaceTemplatesRepository.getTemplate).mockResolvedValue(
+        { id: TEMPLATE_UUID, body: null } as Awaited<ReturnType<typeof deps.workspaceTemplatesRepository.getTemplate>>
+      );
+
+      const session = new ConnectionSession(ws, user, deps);
+      session.start("conn-1");
+
+      ws.emit("message", JSON.stringify({
+        type: "c.chat.send",
+        conversationId: CONV_UUID,
+        model: "gpt-4",
+        messages: [{ role: "user", content: "hello" }],
+      }));
+
+      await vi.waitFor(() => {
+        expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "chat.requested" }));
+      });
+
+      const publishCall = publishSpy.mock.calls.find(
+        (call) => (call[0] as ChatEvent).type === "chat.requested"
+      );
+      const messages = (publishCall?.[0] as { messages: Array<{ role: string }> }).messages;
+      expect(messages.every((m) => m.role !== "system")).toBe(true);
     });
 
     it("forwards only the newest client message on top of stored history", async () => {

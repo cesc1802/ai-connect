@@ -164,6 +164,7 @@ export class ConnectionSession {
 
   private async handleChatSend(msg: Extract<ClientV2Message, { type: "c.chat.send" }>): Promise<void> {
     let conversationId = msg.conversationId;
+    let templateId: string | undefined;
 
     if (conversationId) {
       const conv = await this.deps.convRepo.get(conversationId);
@@ -175,6 +176,7 @@ export class ConnectionSession {
         this.sendWithBackpressure({ type: "s.error", code: "forbidden", message: "Access denied" });
         return;
       }
+      templateId = conv.templateId;
     } else {
       // Resolve the target workspace: an explicit workspaceId (must be a member)
       // wins over the user's active workspace.
@@ -214,7 +216,17 @@ export class ConnectionSession {
         updatedAt: now,
       });
       conversationId = conv.id;
+      templateId = msg.templateId;
       this.sendWithBackpressure({ type: "s.conversation.created", conversation: conv });
+    }
+
+    // The template body acts as the conversation's system prompt. It is
+    // resolved fresh on every turn and never persisted as a message, so
+    // template edits apply to future turns of conversations seeded from it.
+    let systemMessage: ChatMessage | undefined;
+    if (templateId) {
+      const template = await this.deps.workspaceTemplatesRepository.getTemplate(templateId);
+      if (template?.body) systemMessage = { role: "system", content: template.body };
     }
 
     const history = await this.deps.msgRepo.listByConversation(conversationId);
@@ -225,7 +237,7 @@ export class ConnectionSession {
     const newMessage: ChatMessage = { role: last.role, content: last.content };
     if (last.name !== undefined) newMessage.name = last.name;
     if (last.toolCallId !== undefined) newMessage.toolCallId = last.toolCallId;
-    const allMessages = [...historyMessages, newMessage];
+    const allMessages = [...(systemMessage ? [systemMessage] : []), ...historyMessages, newMessage];
 
     const requestId = randomUUID();
     this.ownedRequestIds.add(requestId);

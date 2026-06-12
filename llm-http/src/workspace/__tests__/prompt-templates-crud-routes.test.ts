@@ -32,6 +32,7 @@ describe("Prompt Templates CRUD Routes", () => {
       updateTemplate: vi.fn(),
       deleteTemplate: vi.fn(),
       listForWorkspace: vi.fn(),
+      getTemplate: vi.fn(),
       attach: vi.fn(),
       detach: vi.fn(),
       templateExists: vi.fn(),
