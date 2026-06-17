@@ -510,6 +510,10 @@ llm-http/src/
 │   ├── server-message-types.ts  # TypeScript defs (s.chat.started, s.chat.token, etc.)
 │   └── index.ts                 # Public exports
 │
+├── dashboard/                    # Dashboard metrics aggregation
+│   ├── dashboard-routes.ts      # GET /api/dashboard/stats (role-scoped overview)
+│   └── __tests__/               # Routes tests
+│
 ├── workspace/                    # Workspace CRUD (paging, admin) + detail feature
 │   ├── workspace-repository.ts  # Repository interface (getById, isMember, list, create, update, softDelete)
 │   ├── drizzle-workspace-repository.ts  # Postgres implementation (Drizzle ORM)

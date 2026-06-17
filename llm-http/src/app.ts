@@ -14,6 +14,7 @@ import { createPromptTemplatesRoutes } from "./workspace/prompt-templates-routes
 import { createUsersRoutes } from "./users/users-routes.js";
 import { createProvidersRoutes } from "./providers/providers-routes.js";
 import { createMeDefaultModelRoutes } from "./providers/me-default-model-routes.js";
+import { createDashboardRoutes } from "./dashboard/dashboard-routes.js";
 import { createRedactLogMiddleware } from "./shared/redact-log-middleware.js";
 import { createRateLimit } from "./shared/rate-limit.js";
 import { createCors } from "./shared/cors-middleware.js";
@@ -84,6 +85,15 @@ export function createApp(container: AppContainer): Express {
     createPromptTemplatesRoutes(container.workspaceTemplatesRepository),
   );
   app.use("/users", requireAuth, createUsersRoutes(container));
+  app.use(
+    "/api/dashboard",
+    requireAuth,
+    createDashboardRoutes(
+      container.workspaceRepository,
+      container.usersService,
+      container.orgProvidersRepo,
+    ),
+  );
   app.use(
     "/providers",
     requireAuth,

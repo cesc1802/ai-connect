@@ -844,6 +844,7 @@ HTTP Response
 | `/health` | GET | No | No | Health check endpoint (empty provider list until first chat request triggers lazy load) | ✅ |
 | `/auth/login` | POST | No | Yes (IP) | Login with credentials | ✅ |
 | `/auth` | * | No | No | Auth routes | ✅ |
+| `/api/dashboard/stats` | GET | User | No | Dashboard metrics (role-scoped workspaces, member count, active provider count) | ✅ |
 | `/workspaces` | GET | User | No | List workspaces (paginated, role-aware) | ✅ |
 | `/workspaces` | POST | System Admin | No | Create workspace | ✅ |
 | `/ws/chat/v2` | Upgrade | Query Token | No | Event-driven WebSocket | ✅ |
