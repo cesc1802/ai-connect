@@ -146,6 +146,23 @@ describe("chat-reducer", () => {
     expect(s.status).toBe("idle");
   });
 
+  it("SERVER_FAILED faults the in-flight draft even before SERVER_STARTED (guardrail block)", () => {
+    // Pre-send guardrail blocks emit s.chat.failed with a requestId that was
+    // never bound to the draft (no s.chat.started). The failure must still
+    // fault the pending draft so the typing indicator clears.
+    let s = send(initialChatState, "L1");
+    s = chatReducer(s, {
+      type: "SERVER_FAILED",
+      requestId: "unbound-request-id",
+      code: "guardrail_blocked",
+      message: "Request blocked by guardrail policy",
+    });
+    expect(s.messages[1].status).toBe("error");
+    expect(s.messages[1].errorCode).toBe("guardrail_blocked");
+    expect(s.activeLocalId).toBeNull();
+    expect(s.status).toBe("idle");
+  });
+
   it("SERVER_ERROR faults the in-flight draft even before SERVER_STARTED", () => {
     let s = send(initialChatState, "L1");
     s = chatReducer(s, {

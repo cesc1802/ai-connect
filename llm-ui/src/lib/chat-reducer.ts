@@ -72,6 +72,19 @@ function findDraftByRequestId(state: ChatState, requestId: string): Msg | undefi
   return state.messages.find((m) => m.requestId === requestId);
 }
 
+// The assistant draft of the active send while it still awaits a server
+// response. Used to attribute failures/errors that arrive before
+// s.chat.started has bound a requestId to the draft.
+function findActiveDraft(state: ChatState): Msg | undefined {
+  if (!state.activeLocalId) return undefined;
+  return state.messages.find(
+    (m) =>
+      m.localId === state.activeLocalId &&
+      m.role === "assistant" &&
+      (m.status === "pending" || m.status === "streaming"),
+  );
+}
+
 // --- handlers ---
 
 function handleSendUser(
@@ -203,7 +216,10 @@ function handleServerFailed(
   action: Extract<ChatAction, { type: "SERVER_FAILED" }>,
   logger: ReducerLogger,
 ): ChatState {
-  const draft = findDraftByRequestId(state, action.requestId);
+  // A pre-send guardrail block fails the request before s.chat.started binds
+  // a requestId to the draft, so fall back to the active pending draft.
+  const draft =
+    findDraftByRequestId(state, action.requestId) ?? findActiveDraft(state);
   if (!draft) {
     logger.warn("SERVER_FAILED for unknown requestId", {
       requestId: action.requestId,
@@ -247,13 +263,7 @@ function handleServerError(
   state: ChatState,
   action: Extract<ChatAction, { type: "SERVER_ERROR" }>,
 ): ChatState {
-  if (!state.activeLocalId) return state;
-  const draft = state.messages.find(
-    (m) =>
-      m.localId === state.activeLocalId &&
-      m.role === "assistant" &&
-      (m.status === "pending" || m.status === "streaming"),
-  );
+  const draft = findActiveDraft(state);
   if (!draft) return state;
   return clearActive(
     replaceMsg(state, draft, {
