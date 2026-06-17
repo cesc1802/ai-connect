@@ -114,6 +114,39 @@ const response = await gateway.chat({
 });
 ```
 
+## Outbound Guardrails
+
+The gateway includes a pre-send guardrail pipeline for content inspection and transformation:
+
+**Workspace-Level Configuration:**
+- Master toggle to enable/disable guardrails per workspace
+- Four check kinds: PII redaction, blocklist, injection detection, moderation
+- Configurable actions per check: redact (mask content) → continue, block (fail request), warn (continue + log)
+
+**Quick Start:**
+```bash
+# 1. Enable guardrails for a workspace via admin UI
+# Go to Workspace Detail → Guardrails tab → toggle Master Switch
+
+# 2. Configure checks (PII, blocklist, injection, moderation)
+# Customize per-check actions and blocklist terms
+
+# 3. SDK usage (for advanced integrations)
+const response = await gateway.chat(request, {
+  guardrails: { enabled: true, classifierUrl: "..." }
+});
+```
+
+**API Reference:**
+- `GET /workspaces/:id/guardrails` — Retrieve workspace policy (requireAuth, member-scoped)
+- `PUT /workspaces/:id/guardrails` — Update policy (requireAuth, admin-only, request: `{ enabled, checks[] }`)
+
+**Block Behavior:** When a check triggers a block action, the request fails immediately with a `stream.failed` event (code: `guardrail_blocked`). The message is never persisted, and the provider never sees the content.
+
+**Redact Behavior:** When a check triggers redact, matched spans are masked as `[REDACTED:LABEL]`. The sanitized request flows to both the message store and the LLM provider.
+
+---
+
 ## Supported Providers
 
 | Provider | Status | Streaming | Tools | Vision | JSON Mode | Max Context |

@@ -32,7 +32,10 @@ export {
   ModelNotFoundError,
   ContentFilterError,
   AbortError,
+  GuardrailBlockedError,
 } from "./errors.js";
+
+export type { GuardrailFindingSummary } from "./errors.js";
 
 // Config
 export type {

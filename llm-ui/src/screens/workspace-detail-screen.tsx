@@ -7,6 +7,7 @@ import { WorkspaceSettingsTab } from "@/components/widgets/workspace-settings-ta
 import { MembersTab } from "@/components/workspace/members-tab";
 import { TemplatesTab } from "@/components/workspace/templates-tab";
 import { ProvidersTab } from "@/components/workspace/providers-tab";
+import { GuardrailsTab } from "@/components/workspace/guardrails-tab";
 import { AddMemberDialog } from "@/components/workspace/add-member-dialog";
 import { Icon } from "@/lib/icons";
 import { cn } from "@/lib/cn";
@@ -16,11 +17,12 @@ import { getWorkspace, type WorkspaceSummary } from "@/lib/workspaces-api";
 import { listMembers, type WorkspaceMember } from "@/lib/workspace-members-api";
 import { WS_ROLES, type WsRoleKey } from "@/lib/mock-data";
 
-type Tab = "members" | "templates" | "providers" | "settings";
+type Tab = "members" | "templates" | "providers" | "guardrails" | "settings";
 const TABS: Array<[Tab, string]> = [
   ["members", "Thành viên"],
   ["templates", "Prompt Templates"],
   ["providers", "Providers"],
+  ["guardrails", "Guardrails"],
   ["settings", "Cấu hình"],
 ];
 
@@ -174,6 +176,7 @@ export function WorkspaceDetailScreen() {
       )}
       {tab === "templates" && <TemplatesTab workspaceId={ws.id} />}
       {tab === "providers" && <ProvidersTab workspaceId={ws.id} />}
+      {tab === "guardrails" && <GuardrailsTab workspaceId={ws.id} />}
       {tab === "settings" && (
         <WorkspaceSettingsTab
           workspace={ws}

@@ -20,7 +20,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "llm-gateway": "workspace:*"
+    "llm-gateway": "workspace:*",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

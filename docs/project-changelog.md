@@ -8,6 +8,47 @@ This document records significant changes, features, and fixes across the LLM Ga
 
 ## [Unreleased] - 2026-06-17
 
+### llm-http v0.0.7 (Feature Release)
+
+**Outbound LLM Guardrails — Pre-Send Content Inspection & Transformation**
+
+New pre-send guardrail pipeline for content inspection and transformation before outbound requests. Four check kinds: PII redaction, keyword/regex blocklist, prompt-injection detection, and LLM-based moderation.
+
+**Architecture:**
+- Pure function engine: `runGuardrails(request, policy, opts, registry) → { request, outcome, checks }` (stateless, reusable SDK unit)
+- Workspace-scoped policies: `workspace_guardrail_policies` table (enabled flag, checks array)
+- Enforcement at HTTP boundary: in `connection-session.ts` before `chat.requested` publish
+- Block action: stops request, emits `stream.failed { code: "guardrail_blocked" }`, never publishes chat.requested (no message persistence, no provider)
+- Redact action: swaps request with sanitized version, publishes to both persister (store-redacted invariant) and gateway
+- Warn action: continues with original request, optional banner to client
+
+**Check Kinds:**
+1. **PII** (`pii`): Span-based redaction of email, API keys (openai, aws), bearer tokens, credit cards, IPv4, phone numbers; default action `redact`; mask format `[REDACTED:LABEL]`
+2. **Blocklist** (`blocklist`): Keyword/regex matching with span extraction; actions redact/block/warn; configuration: terms, regexes, caseSensitive flag
+3. **Injection** (`injection`): Prompt-injection classification (no span); block/warn only; via dedicated `InjectionClassifier`
+4. **Moderation** (`moderation`): LLM-based content moderation via `ModerationClassifier` over static gateway instance; block/warn only
+
+**API Endpoints:**
+- `GET /workspaces/:id/guardrails` (member; 404 for non-member) — retrieve workspace policy
+- `PUT /workspaces/:id/guardrails` (admin-only) — update policy (enabled flag, checks array)
+
+**UI Components (llm-ui):**
+- Workspace detail screen: Guardrails tab with master toggle + per-check enable/action controls + blocklist term editor
+- Components: `guardrail-policy-form.tsx`, `guardrails-tab.tsx`
+- API client: `guardrails-api.ts` (GET/PUT)
+
+**Contract Changes:**
+- `ChatRequested` event now carries required `workspaceId` for policy resolution
+
+**Database:**
+- New table: `workspace_guardrail_policies` (workspace_id FK, policy JSON)
+- Migration: added to llm-db drizzle migrations
+
+**SDK Opt-In (llm-gateway):**
+- Per-request via `GatewayRequestOptions.guardrails` (optional; HTTP users always use workspace policy)
+
+---
+
 ### llm-http v0.0.6 (Feature Release)
 
 **Token Usage Capture per Provider & Workspace**

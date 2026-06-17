@@ -20,6 +20,8 @@ export interface ChatRequested {
   requestId: string;
   userId: string;
   conversationId: string;
+  /** Workspace owning the conversation; required to resolve the guardrail policy. */
+  workspaceId: string;
   model: string;
   messages: ChatMessage[];
   maxTokens?: number;

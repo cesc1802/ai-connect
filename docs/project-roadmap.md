@@ -1,7 +1,7 @@
 # LLM Gateway - Project Roadmap
 
-**Last Updated:** June 11, 2026  
-**Current Status:** v0.0.5 - Chat Screen Redesign + Persistent History; v1.1.0 - Provider Config & Lazy Load  
+**Last Updated:** June 17, 2026  
+**Current Status:** v0.0.7 - Outbound LLM Guardrails; v1.1.0 - Provider Config & Lazy Load  
 **Next Milestone:** v1.2.0 - Caching & Context Optimization
 
 ## Vision
@@ -91,6 +91,34 @@ Provide a production-ready, provider-agnostic LLM abstraction layer that:
 #### Known Limitations
 - Member-only conversation deletion requires admin (future: self-service)
 - No conversation sharing/collaboration (future: workspace-scoped read/write)
+
+---
+
+### v0.0.7 - Outbound LLM Guardrails (COMPLETE)
+**Status:** ✅ Released  
+**Release Date:** June 17, 2026
+
+#### Features
+- ✅ Pre-send guardrail pipeline: pure function engine (`runGuardrails`)
+- ✅ PII redaction: email, API keys, bearer tokens, credit cards, IPv4, phone (span-based)
+- ✅ Blocklist checking: keyword/regex matching with configurable actions (redact/block/warn)
+- ✅ Prompt-injection detection: classification-based (block/warn; no redaction)
+- ✅ LLM-based moderation: via dedicated classifier gateway (block/warn; no redaction)
+- ✅ Workspace-scoped policies: stored in DB, retrieved per request
+- ✅ Enforcement at HTTP boundary: before chat.requested publish (block prevents message persistence)
+- ✅ Block action: emits stream.failed, no message persisted, provider never called
+- ✅ Redact action: swaps request, publishes sanitized to persister and gateway (store-redacted invariant)
+- ✅ Workspace Guardrails tab: master toggle + per-check enable/action + blocklist term editor
+- ✅ API: GET/PUT /workspaces/:id/guardrails (member read, admin write)
+- ✅ SDK opt-in: per-request via GatewayRequestOptions.guardrails
+
+#### Breaking Changes
+- `ChatRequested` event now requires `workspaceId` field (for policy lookup)
+
+#### Known Limitations
+- Moderation classifier is static (shared across requests) — not per-workspace configurable
+- Injection detection limited to LLM-scorer accuracy
+- No audit trail for blocked/redacted requests (future: compliance logging)
 
 ---
 

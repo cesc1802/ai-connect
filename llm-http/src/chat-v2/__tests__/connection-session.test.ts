@@ -38,6 +38,10 @@ function createMockDeps(bus: EventBus<ChatEvent>): ConnectionSessionDeps {
       listForWorkspace: vi.fn().mockResolvedValue([]),
       getTemplate: vi.fn().mockResolvedValue(undefined),
     } as unknown as ConnectionSessionDeps["workspaceTemplatesRepository"],
+    guardrailPolicyRepository: {
+      get: vi.fn().mockResolvedValue({ enabled: false, checks: [] }),
+      upsert: vi.fn(),
+    } as unknown as ConnectionSessionDeps["guardrailPolicyRepository"],
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as ConnectionSessionDeps["logger"],
   };
 }
@@ -362,6 +366,75 @@ describe("ConnectionSession", () => {
       await vi.waitFor(() => {
         expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('"code":"not_found"'));
       });
+    });
+  });
+
+  describe("guardrail enforcement", () => {
+    it("redacts PII from the published request when the policy is enabled", async () => {
+      const conv: Conversation = { id: CONV_UUID, workspaceId: "ws-test", userId: user.id, createdAt: 1000, updatedAt: 1000 };
+      vi.mocked(deps.convRepo.get).mockResolvedValue(conv);
+      vi.mocked(deps.msgRepo.listByConversation).mockResolvedValue([]);
+      vi.mocked(deps.guardrailPolicyRepository.get).mockResolvedValue({
+        enabled: true,
+        checks: [{ kind: "pii", enabled: true, action: "redact" }],
+      });
+
+      const session = new ConnectionSession(ws, user, deps);
+      session.start("conn-1");
+
+      ws.emit("message", JSON.stringify({
+        type: "c.chat.send",
+        conversationId: CONV_UUID,
+        model: "gpt-4",
+        messages: [{ role: "user", content: "reach me at alice@example.com" }],
+      }));
+
+      await vi.waitFor(() => {
+        expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "chat.requested" }));
+      });
+
+      // The policy is resolved against the conversation's workspace: a
+      // follow-up turn carries no explicit workspaceId yet is still governed.
+      expect(deps.guardrailPolicyRepository.get).toHaveBeenCalledWith("ws-test");
+
+      const publishCall = publishSpy.mock.calls.find(
+        (call) => (call[0] as ChatEvent).type === "chat.requested"
+      );
+      const messages = (publishCall?.[0] as { messages: Array<{ content: string }> }).messages;
+      // What reaches the provider — and, via the same event, what gets persisted
+      // — must no longer contain the raw email (store-redacted invariant).
+      expect(messages[messages.length - 1]!.content).not.toContain("alice@example.com");
+    });
+
+    it("blocks on a blocklist match and never publishes chat.requested", async () => {
+      const conv: Conversation = { id: CONV_UUID, workspaceId: "ws-test", userId: user.id, createdAt: 1000, updatedAt: 1000 };
+      vi.mocked(deps.convRepo.get).mockResolvedValue(conv);
+      vi.mocked(deps.msgRepo.listByConversation).mockResolvedValue([]);
+      vi.mocked(deps.guardrailPolicyRepository.get).mockResolvedValue({
+        enabled: true,
+        checks: [{ kind: "blocklist", enabled: true, action: "block", options: { terms: ["launchcode"] } }],
+      });
+
+      const session = new ConnectionSession(ws, user, deps);
+      session.start("conn-1");
+
+      ws.emit("message", JSON.stringify({
+        type: "c.chat.send",
+        conversationId: CONV_UUID,
+        model: "gpt-4",
+        messages: [{ role: "user", content: "the launchcode is 1234" }],
+      }));
+
+      await vi.waitFor(() => {
+        expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('"code":"guardrail_blocked"'));
+      });
+
+      // No request leaves the system; the failed event carries no offending text.
+      expect(publishSpy).not.toHaveBeenCalledWith(expect.objectContaining({ type: "chat.requested" }));
+      const failedSend = vi.mocked(ws.send).mock.calls
+        .map((c) => String(c[0]))
+        .find((s) => s.includes("guardrail_blocked"));
+      expect(failedSend).not.toContain("launchcode");
     });
   });
 

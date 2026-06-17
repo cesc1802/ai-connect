@@ -7,9 +7,11 @@ import {
 import { createWorkspaceMembersRoutes } from "./workspace-members-routes.js";
 import { createWorkspaceProvidersRoutes } from "./workspace-providers-routes.js";
 import { createWorkspaceTemplatesRoutes } from "./workspace-templates-routes.js";
+import { createGuardrailPolicyRoutes } from "../guardrails/guardrail-policy-routes.js";
 import type { WorkspaceMembersRepository } from "./workspace-members-repository.js";
 import type { WorkspaceProvidersRepository } from "./workspace-providers-repository.js";
 import type { WorkspaceTemplatesRepository } from "./workspace-templates-repository.js";
+import type { GuardrailPolicyRepository } from "@ai-connect/shared";
 
 // Non-UUID ids short-circuit to 404 before hitting Postgres, which would
 // otherwise raise a 22P02 (invalid uuid input) instead of a clean miss.
@@ -46,7 +48,8 @@ export function createWorkspaceByIdRoutes(
   repo: WorkspaceRepository,
   membersRepo: WorkspaceMembersRepository,
   providersRepo: WorkspaceProvidersRepository,
-  templatesRepo: WorkspaceTemplatesRepository
+  templatesRepo: WorkspaceTemplatesRepository,
+  guardrailPolicyRepo: GuardrailPolicyRepository
 ): Router {
   const router = Router();
 
@@ -182,10 +185,11 @@ export function createWorkspaceByIdRoutes(
     }
   });
 
-  // Mount nested resource routers in declared order: members → providers → templates.
+  // Mount nested resource routers in declared order: members → providers → templates → guardrails.
   router.use("/:id/members", createWorkspaceMembersRoutes(membersRepo, repo));
   router.use("/:id/providers", createWorkspaceProvidersRoutes(providersRepo, repo));
   router.use("/:id/templates", createWorkspaceTemplatesRoutes(templatesRepo, repo));
+  router.use("/:id/guardrails", createGuardrailPolicyRoutes(guardrailPolicyRepo, repo));
 
   return router;
 }

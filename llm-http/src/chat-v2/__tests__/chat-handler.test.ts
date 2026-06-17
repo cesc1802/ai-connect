@@ -43,6 +43,7 @@ describe("ChatHandler", () => {
     requestId: "req-1",
     userId: "user-1",
     conversationId: "conv-1",
+    workspaceId: "ws-1",
     model: "gpt-4",
     messages: [{ role: "user", content: "Hello" }],
   };

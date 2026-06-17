@@ -36,6 +36,9 @@ import type { IRoutingStrategy } from "./routing/index.js";
 import { CircuitBreaker, RetryDecorator, FallbackChain } from "./resilience/index.js";
 import type { CircuitMetrics } from "./resilience/index.js";
 import { LLMTracer, LLMMetrics } from "./telemetry/index.js";
+import { runGuardrails, findingSummaries } from "./guardrails/index.js";
+import type { GuardrailPolicy, ModerationVerdict } from "./guardrails/index.js";
+import { GuardrailBlockedError } from "./core/errors.js";
 
 /**
  * Gateway metrics for monitoring
@@ -58,6 +61,14 @@ export interface GatewayRequestOptions {
   provider?: ProviderName;
   timeout?: number;
   signal?: AbortSignal;
+  /**
+   * Opt-in pre-send guardrails for direct SDK consumers (defense-in-depth). The
+   * product HTTP path runs guardrails at its own boundary and passes NO policy
+   * here, so the engine never double-runs.
+   */
+  guardrails?: GuardrailPolicy;
+  /** Moderation seam used by the moderation check, if the policy enables it. */
+  moderate?: (text: string) => Promise<ModerationVerdict>;
 }
 
 /**
@@ -330,8 +341,10 @@ export class LLMGateway {
     span.setRequestAttributes(normalizedRequest, provider.name);
 
     try {
+      // Opt-in guardrails (no-op unless options.guardrails is set).
+      const guardedRequest = await this.precheckGuardrails(normalizedRequest, options, span);
       const response = await new RetryDecorator(provider, this.retryConfig).chatCompletion(
-        normalizedRequest,
+        guardedRequest,
         signal
       );
 
@@ -396,9 +409,13 @@ export class LLMGateway {
     const startTime = performance.now();
 
     try {
+      // Opt-in guardrails. The generator body runs on the first pull, so this
+      // pre-flight is awaited before any chunk is yielded — a block surfaces
+      // before stream start, not mid-stream. No-op unless options.guardrails set.
+      const guardedRequest = await this.precheckGuardrails(normalizedRequest, options, span);
       const retryProvider = new RetryDecorator(provider, this.retryConfig);
 
-      for await (const chunk of retryProvider.streamCompletion(normalizedRequest, signal)) {
+      for await (const chunk of retryProvider.streamCompletion(guardedRequest, signal)) {
         reset();
         // Stamp the resolved provider kind on the terminal chunk (the one
         // carrying usage/finishReason) so downstream usage capture attributes
@@ -667,6 +684,29 @@ export class LLMGateway {
       return { ...request, model: parts.slice(1).join("/") };
     }
     return request;
+  }
+
+  /**
+   * Opt-in guardrail pre-flight for the SDK paths. Runs eagerly (awaited before
+   * any provider call / first stream chunk), records non-sensitive findings on
+   * the span, throws `GuardrailBlockedError` on block, and otherwise returns the
+   * possibly-redacted request. Passthrough when no policy is supplied.
+   */
+  private async precheckGuardrails(
+    request: ChatRequest,
+    options: GatewayRequestOptions | undefined,
+    span: { recordGuardrail(f: { kind: string; label: string; severity: string }[], blocked: boolean): void },
+  ): Promise<ChatRequest> {
+    if (!options?.guardrails) return request;
+    const outcome = await runGuardrails(request, options.guardrails, {
+      ...(options.moderate && { moderate: options.moderate }),
+      ...(options.signal && { signal: options.signal }),
+    });
+    span.recordGuardrail(findingSummaries(outcome.findings), outcome.blocked);
+    if (outcome.blocked) {
+      throw new GuardrailBlockedError(findingSummaries(outcome.findings));
+    }
+    return outcome.request;
   }
 
   /**

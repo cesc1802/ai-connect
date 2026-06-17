@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 import type { Server } from "node:http";
-import type { User, ChatEvent, ConversationRepository, MessageRepository } from "@ai-connect/shared";
+import type {
+  User,
+  ChatEvent,
+  ConversationRepository,
+  MessageRepository,
+  GuardrailPolicyRepository,
+} from "@ai-connect/shared";
+import type { ModerationVerdict } from "llm-gateway";
 import type { JwtService } from "../auth/jwt-service.js";
 import type { EventBus } from "../events/event-bus.js";
 import type { ConnectionRegistry } from "../transport/connection-registry.js";
@@ -30,6 +37,8 @@ export interface V2ServerDeps {
   activeWorkspaceResolver: ActiveWorkspaceResolver;
   workspaceMembersRepository: WorkspaceMembersRepository;
   workspaceTemplatesRepository: WorkspaceTemplatesRepository;
+  guardrailPolicyRepository: GuardrailPolicyRepository;
+  moderate?: (text: string) => Promise<ModerationVerdict>;
   logger: Logger;
 }
 
@@ -76,6 +85,8 @@ export function attachChatV2Server(httpServer: Server, deps: V2ServerDeps): V2We
       activeWorkspaceResolver: deps.activeWorkspaceResolver,
       workspaceMembersRepository: deps.workspaceMembersRepository,
       workspaceTemplatesRepository: deps.workspaceTemplatesRepository,
+      guardrailPolicyRepository: deps.guardrailPolicyRepository,
+      ...(deps.moderate ? { moderate: deps.moderate } : {}),
       logger: deps.logger,
     });
     session.start(connectionId);

@@ -311,7 +311,49 @@ interface LLMProvider {
 - Accepts OpenTelemetry SDK exporter instance
 - Automatic metric export based on exporter configuration
 
-### 14. Main Gateway (`gateway.ts`)
+### 14. Guardrails System (`guardrails/`)
+
+**PII & Content Inspection Pipeline**
+
+Pure function engine for pre-send content inspection and transformation:
+
+```
+llm-gateway/src/guardrails/
+├── index.ts                  # runGuardrails() main export
+├── types.ts                  # GuardrailPolicy, GuardrailCheck, GuardrailOutcome
+├── pii-detector.ts          # Regex-based PII redaction (email, keys, tokens, cards, IPs, phones)
+├── blocklist-checker.ts     # Keyword/regex term matching with span extraction
+├── injection-classifier.ts  # Interface for injection detection (delegates to external scorer)
+├── moderation-classifier.ts # Interface for LLM-based moderation
+└── __tests__/              # Engine + detector tests
+```
+
+**Features:**
+- Span-based redaction: identifies matched regions and swaps with `[REDACTED:LABEL]`
+- Four check kinds: pii, blocklist, injection, moderation
+- Outcome actions: redact (swap + continue), block (fail request), warn (continue + log)
+- Stateless: pure function, no side effects on failure
+- SDK opt-in: per-request via `GatewayRequestOptions.guardrails`
+
+**Integration (llm-http):**
+- Policy CRUD: `llm-http/src/guardrails/guardrail-policy-routes.ts`
+- Repository: `GuardrailPolicyRepository` (workspace-scoped in `llm-db`)
+- Enforcement: in `connection-session.ts` before `chat.requested` publish
+- Block action: emits `stream.failed { code: "guardrail_blocked" }` (no message persistence)
+- Redact action: publishes sanitized request to both persister and gateway
+
+**UI Integration (llm-ui):**
+- Components: `guardrail-policy-form.tsx`, `guardrails-tab.tsx`
+- API: `guardrails-api.ts` (GET/PUT workspace guardrails)
+- Workspace detail screen: Guardrails tab with master toggle + per-check enable/action + blocklist terms
+
+**Database:**
+- `workspace_guardrail_policies` table: workspace_id FK, policy JSON (enabled, checks[])
+- Migration: tracked in llm-db drizzle migrations
+
+---
+
+### 15. Main Gateway (`gateway.ts`)
 
 **Initialization:**
 - Validates configuration

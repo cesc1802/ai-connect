@@ -11,3 +11,4 @@ export * from "./workspace-providers.js";
 export * from "./prompt-templates.js";
 export * from "./workspace-templates.js";
 export * from "./usage-metrics.js";
+export * from "./workspace-guardrail-policies.js";

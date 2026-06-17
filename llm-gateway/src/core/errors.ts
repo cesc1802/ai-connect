@@ -157,3 +157,30 @@ export class AbortError extends LLMError {
     this.name = "AbortError";
   }
 }
+
+/**
+ * Outbound request blocked by a guardrail policy.
+ *
+ * The message is deliberately static and content-free: it must never echo the
+ * matched value (a blocked secret/PII string) into logs or API responses. The
+ * triggering findings ride along on `findings` (kind/label/severity only) for
+ * the caller to map to a safe code; they are excluded from `toJSON()`. The HTTP
+ * boundary keys on `name === "GuardrailBlockedError"` to map this to a
+ * `guardrail_blocked` code rather than a generic internal error.
+ */
+export class GuardrailBlockedError extends LLMError {
+  constructor(
+    public readonly findings: GuardrailFindingSummary[] = [],
+    cause?: Error,
+  ) {
+    super("Request blocked by guardrail policy", "GUARDRAIL_BLOCKED", cause);
+    this.name = "GuardrailBlockedError";
+  }
+}
+
+/** Minimal finding shape carried by the block error — never the matched value. */
+export interface GuardrailFindingSummary {
+  kind: string;
+  label: string;
+  severity: string;
+}

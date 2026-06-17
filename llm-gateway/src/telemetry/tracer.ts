@@ -16,10 +16,19 @@ const SEMANTIC_ATTR = {
 /**
  * Span wrapper for LLM operations
  */
+/** Guardrail finding shape recorded on the span — no raw matched values. */
+export interface GuardrailSpanFinding {
+  kind: string;
+  label: string;
+  severity: string;
+}
+
 export interface LLMSpan {
   setRequestAttributes(request: ChatRequest, provider: ProviderName): void;
   setResponseAttributes(response: ChatResponse): void;
   recordError(error: Error): void;
+  /** Record guardrail activity: counts/kinds/labels/severities only. */
+  recordGuardrail(findings: GuardrailSpanFinding[], blocked: boolean): void;
   end(): void;
 }
 
@@ -30,6 +39,7 @@ class NoOpSpan implements LLMSpan {
   setRequestAttributes(): void {}
   setResponseAttributes(): void {}
   recordError(): void {}
+  recordGuardrail(): void {}
   end(): void {}
 }
 
@@ -66,6 +76,16 @@ class OTelSpan implements LLMSpan {
   recordError(error: Error): void {
     this.span.recordException(error);
     this.span.setStatus({ code: 2, message: error.message }); // SpanStatusCode.ERROR = 2
+  }
+
+  recordGuardrail(findings: GuardrailSpanFinding[], blocked: boolean): void {
+    this.span.setAttributes({
+      "llm.guardrail.finding_count": findings.length,
+      "llm.guardrail.blocked": blocked,
+      "llm.guardrail.kinds": Array.from(new Set(findings.map((f) => f.kind))),
+      "llm.guardrail.labels": findings.map((f) => f.label),
+      "llm.guardrail.severities": findings.map((f) => f.severity),
+    });
   }
 
   end(): void {

@@ -834,6 +834,92 @@ If migrations fail, app does not boot (safe failure). If app is already running 
 
 ---
 
+## Guardrail System Architecture
+
+The guardrail pipeline provides pre-send content inspection and transformation before outbound LLM requests leave the system.
+
+### Engine & Policy Model
+
+**Core Engine (`llm-gateway/src/guardrails/runGuardrails`):**
+- Pure function: `runGuardrails(request, policy, opts, registry) → { request, outcome, checks }`
+- Stateless SDK unit, reusable in any integration
+- Outcome actions: `redact` (swap request, continue) | `block` (stop, never publish chat.requested) | `warn` (continue)
+- No side effects; failures in checks don't break the request stream
+
+**Policy Storage & Scope:**
+- Workspace-scoped policies stored in `workspace_guardrail_policies` table
+- Shape: `{ enabled: boolean, checks: GuardrailCheckConfig[] }`
+- Repository: `GuardrailPolicyRepository` (get/upsert by workspaceId)
+- API: `GET /workspaces/:id/guardrails` (member, 404 for non-member) + `PUT /workspaces/:id/guardrails` (admin-only)
+
+**Check Kinds:**
+
+1. **PII Detection** (`pii`): Span-based redaction
+   - Patterns: email, openai_key, aws_access_key, bearer_token, credit_card, ipv4, phone
+   - Default action: `redact` (swap matched spans with `[REDACTED:LABEL]`)
+   - Configurable action: redact/block/warn
+
+2. **Blocklist** (`blocklist`): Keyword & regex filtering
+   - Span-based matching (term, regex, or literal)
+   - Actions: redact/block/warn
+   - Configuration: terms[], regexes[], caseSensitive (boolean)
+
+3. **Injection Detection** (`injection`): Prompt-injection classification
+   - Classification (no span); block/warn only (no redaction)
+   - Via dedicated `InjectionClassifier` (interface; ModerationClassifier implements)
+   - Consumes LLM-based scorer over static gateway
+
+4. **Moderation** (`moderation`): LLM-based content moderation
+   - Classification via dedicated `ModerationClassifier`
+   - Static gateway instance (not per-request)
+   - Actions: block/warn only
+   - Called only if policy.enabled and check.enabled
+
+### Enforcement at HTTP Boundary
+
+**Integration Point: `llm-http/src/chat-v2/connection-session.ts`**
+
+Before publishing `chat.requested` event:
+1. Load workspace guardrail policy (or empty if disabled)
+2. Call `runGuardrails()` with request + policy
+3. **If outcome === 'block':**
+   - Do NOT publish `chat.requested` (guards message persistence & provider)
+   - Emit `stream.failed { code: "guardrail_blocked", message: "..." }` to client
+   - Skip gateway invocation
+4. **If outcome === 'redact':**
+   - Swap request with redacted version
+   - Publish redacted request to both message persister (store-redacted invariant) and gateway
+5. **If outcome === 'warn':**
+   - Continue with original request
+   - Optionally emit `s.error` banner to client (future: per-check action flag)
+
+**Rationale:** Block before chat.requested ensures no offending content reaches transcript, provider API, or logs. Redact-on-publish means the user sees cleaned transcripts while gateway processes sanitized input.
+
+### SDK Opt-In
+
+Per-request guardrails enablement via `GatewayRequestOptions.guardrails`:
+```typescript
+await gateway.stream(request, { guardrails: { enabled: true, classifierUrl: "..." } })
+```
+
+For HTTP users: guardrails are always active if policy enabled; no per-request toggle (enforced at workspace level).
+
+### Contract Changes
+
+**ChatRequested Event** now carries required `workspaceId` for policy resolution:
+```typescript
+event chat.requested {
+  requestId: string
+  userId: string
+  workspaceId: string  // REQUIRED (new)
+  conversationId: string
+  model: string
+  messages: ChatMessage[]
+}
+```
+
+---
+
 ## HTTP Server Architecture (llm-http)
 
 The HTTP server provides REST API endpoints for the LLM Gateway with built-in authentication and dependency injection.

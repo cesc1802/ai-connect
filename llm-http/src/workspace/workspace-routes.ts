@@ -8,6 +8,7 @@ import {
 import type { WorkspaceMembersRepository } from "./workspace-members-repository.js";
 import type { WorkspaceProvidersRepository } from "./workspace-providers-repository.js";
 import type { WorkspaceTemplatesRepository } from "./workspace-templates-repository.js";
+import type { GuardrailPolicyRepository } from "@ai-connect/shared";
 
 const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -40,7 +41,8 @@ export function createWorkspaceRoutes(
   repo: WorkspaceRepository,
   membersRepo: WorkspaceMembersRepository,
   providersRepo: WorkspaceProvidersRepository,
-  templatesRepo: WorkspaceTemplatesRepository
+  templatesRepo: WorkspaceTemplatesRepository,
+  guardrailPolicyRepo: GuardrailPolicyRepository
 ): Router {
   const router = Router();
 
@@ -127,7 +129,9 @@ export function createWorkspaceRoutes(
     }
   });
 
-  router.use(createWorkspaceByIdRoutes(repo, membersRepo, providersRepo, templatesRepo));
+  router.use(
+    createWorkspaceByIdRoutes(repo, membersRepo, providersRepo, templatesRepo, guardrailPolicyRepo)
+  );
 
   return router;
 }

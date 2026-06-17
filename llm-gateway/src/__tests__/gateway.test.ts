@@ -4,6 +4,9 @@ import type { ChatRequest, ChatResponse, StreamChunk, ProviderCapabilities } fro
 import type { LLMProvider } from "../providers/index.js";
 import { ProviderFactory } from "../factory/index.js";
 import { CircuitState } from "../resilience/index.js";
+import { GuardrailBlockedError } from "../core/errors.js";
+import { DEFAULT_CHECK_REGISTRY } from "../guardrails/index.js";
+import type { GuardrailCheck, GuardrailPolicy } from "../guardrails/index.js";
 
 // Mock init to prevent provider registration side effects
 vi.mock("../init.js", () => ({}));
@@ -685,6 +688,93 @@ describe("LLMGateway", () => {
       expect(metrics.totalRequests).toBe(0);
       expect(metrics.totalErrors).toBe(0);
       expect(metrics.averageLatencyMs).toBe(0);
+    });
+  });
+
+  describe("guardrails precheck", () => {
+    // Register transient stubs into the gateway's default registry so the SDK
+    // wiring is exercised end-to-end; clean them up after each test.
+    afterEach(() => {
+      delete DEFAULT_CHECK_REGISTRY.injection;
+      delete DEFAULT_CHECK_REGISTRY.pii;
+    });
+
+    const blockPolicy: GuardrailPolicy = {
+      enabled: true,
+      checks: [{ kind: "injection", enabled: true, action: "block" }],
+    };
+
+    function registerBlock(): void {
+      const check: GuardrailCheck = {
+        id: "blk",
+        kind: "injection",
+        async run() {
+          return { findings: [{ checkId: "blk", kind: "injection", channel: "message", label: "jailbreak", severity: "high" }] };
+        },
+      };
+      DEFAULT_CHECK_REGISTRY.injection = () => check;
+    }
+
+    it("chat() blocks before calling the provider", async () => {
+      registerBlock();
+      const gateway = new LLMGateway({ providers: { anthropic: { apiKey: "k" } } });
+
+      await expect(gateway.chat(createTestRequest(), { guardrails: blockPolicy })).rejects.toBeInstanceOf(
+        GuardrailBlockedError,
+      );
+      expect(mockProvider.chatCompletion).not.toHaveBeenCalled();
+    });
+
+    it("stream() blocks before the first yield (provider stream never started)", async () => {
+      registerBlock();
+      (mockProvider.streamCompletion as ReturnType<typeof vi.fn>).mockReturnValue(createMockStream());
+      const gateway = new LLMGateway({ providers: { anthropic: { apiKey: "k" } } });
+
+      const chunks: StreamChunk[] = [];
+      await expect(async () => {
+        for await (const c of gateway.stream(createTestRequest(), { guardrails: blockPolicy })) {
+          chunks.push(c);
+        }
+      }).rejects.toBeInstanceOf(GuardrailBlockedError);
+
+      expect(chunks).toHaveLength(0);
+      expect(mockProvider.streamCompletion).not.toHaveBeenCalled();
+    });
+
+    it("passes the redacted request to the provider when a check transforms it", async () => {
+      const redact: GuardrailCheck = {
+        id: "red",
+        kind: "pii",
+        async run({ request }) {
+          return {
+            findings: [{ checkId: "red", kind: "pii", channel: "message", messageIndex: 0, label: "email", severity: "high" }],
+            transformedRequest: {
+              ...request,
+              messages: request.messages.map((m, i) => (i === 0 ? { ...m, content: "[REDACTED]" } : m)),
+            },
+          };
+        },
+      };
+      DEFAULT_CHECK_REGISTRY.pii = () => redact;
+      (mockProvider.chatCompletion as ReturnType<typeof vi.fn>).mockResolvedValue(createTestResponse());
+      const gateway = new LLMGateway({ providers: { anthropic: { apiKey: "k" } } });
+
+      await gateway.chat(createTestRequest(), {
+        guardrails: { enabled: true, checks: [{ kind: "pii", enabled: true, action: "redact" }] },
+      });
+
+      const sent = (mockProvider.chatCompletion as ReturnType<typeof vi.fn>).mock.calls[0]![0] as ChatRequest;
+      expect(sent.messages[0]!.content).toBe("[REDACTED]");
+    });
+
+    it("does not invoke guardrails when no policy is supplied", async () => {
+      registerBlock(); // registered but unused because options.guardrails is absent
+      (mockProvider.chatCompletion as ReturnType<typeof vi.fn>).mockResolvedValue(createTestResponse());
+      const gateway = new LLMGateway({ providers: { anthropic: { apiKey: "k" } } });
+
+      const res = await gateway.chat(createTestRequest());
+      expect(res.content).toBe("Hello!");
+      expect(mockProvider.chatCompletion).toHaveBeenCalledTimes(1);
     });
   });
 });

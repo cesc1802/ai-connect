@@ -48,3 +48,34 @@ export type { CircuitMetrics, RetryEvent, RetryEventListener } from "./resilienc
 // Telemetry
 export { LLMTracer, LLMMetrics } from "./telemetry/index.js";
 export type { LLMSpan } from "./telemetry/index.js";
+
+// Guardrails (pre-send content controls)
+export {
+  runGuardrails,
+  applyGuardrails,
+  findingSummaries,
+  DEFAULT_CHECK_REGISTRY,
+  extractSegments,
+  applySegmentRedactions,
+  applyRedactions,
+} from "./guardrails/index.js";
+export type {
+  GuardrailKind,
+  GuardrailAction,
+  GuardrailSeverity,
+  GuardrailChannel,
+  GuardrailFinding,
+  GuardrailResult,
+  GuardrailCheck,
+  GuardrailInput,
+  GuardrailCheckConfig,
+  GuardrailPolicy,
+  GuardrailOutcome,
+  GuardrailRunOptions,
+  GuardrailCheckFactory,
+  GuardrailCheckRegistry,
+  ModerationVerdict,
+  TextSegment,
+  SegmentRedaction,
+  RedactionSpan,
+} from "./guardrails/index.js";

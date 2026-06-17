@@ -1,4 +1,4 @@
-import { LLMGateway, type ProviderConfigSource } from "llm-gateway";
+import { LLMGateway, type ProviderConfigSource, type ModerationVerdict } from "llm-gateway";
 import type { AuditEmitter } from "@ai-connect/shared";
 import type { Config } from "./config.js";
 import type { Logger } from "./logger.js";
@@ -50,6 +50,9 @@ import {
   type UsersService,
 } from "./users/users-service.js";
 import { ChatHandler } from "./chat-v2/chat-handler.js";
+import { DrizzleGuardrailPolicyRepository } from "./guardrails/drizzle-guardrail-policy-repository.js";
+import { createModerationClassifier } from "./guardrails/moderation-classifier.js";
+import type { GuardrailPolicyRepository } from "@ai-connect/shared";
 
 export interface AppContainer {
   config: Config;
@@ -75,6 +78,11 @@ export interface AppContainer {
   workspaceMembersRepository: WorkspaceMembersRepository;
   workspaceProvidersRepository: WorkspaceProvidersRepository;
   workspaceTemplatesRepository: WorkspaceTemplatesRepository;
+  guardrailPolicyRepository: GuardrailPolicyRepository;
+  /** Dedicated moderation seam; absent unless MODERATION_* env is configured. */
+  moderate?: (text: string) => Promise<ModerationVerdict>;
+  /** Dedicated moderation gateway, kept for disposal on shutdown. */
+  moderationGateway?: LLMGateway;
   dbClient: DbClient;
   chatHandler: ChatHandler;
 }
@@ -145,6 +153,25 @@ export async function buildContainer(
     await seedPromptTemplates(dbClient);
   }
 
+  const guardrailPolicyRepository: GuardrailPolicyRepository =
+    new DrizzleGuardrailPolicyRepository(dbClient);
+
+  // Optional dedicated moderation classifier: only when fully configured. Its
+  // own gateway + credentials keep it isolated from the chat provider circuit.
+  let moderate: ((text: string) => Promise<ModerationVerdict>) | undefined;
+  let moderationGateway: LLMGateway | undefined;
+  if (config.MODERATION_PROVIDER && config.MODERATION_MODEL) {
+    const built = createModerationClassifier({
+      provider: config.MODERATION_PROVIDER,
+      model: config.MODERATION_MODEL,
+      apiKey: config.MODERATION_API_KEY,
+      baseUrl: config.MODERATION_BASE_URL,
+    });
+    moderate = built.classifier.moderate;
+    moderationGateway = built.gateway;
+    logger.info({ provider: config.MODERATION_PROVIDER }, "Moderation classifier enabled");
+  }
+
   const chatHandler = new ChatHandler(bus, chatGateway, logger);
   chatHandler.start();
 
@@ -172,6 +199,9 @@ export async function buildContainer(
     workspaceMembersRepository,
     workspaceProvidersRepository,
     workspaceTemplatesRepository,
+    guardrailPolicyRepository,
+    ...(moderate ? { moderate } : {}),
+    ...(moderationGateway ? { moderationGateway } : {}),
     dbClient,
     chatHandler,
   };

@@ -78,6 +78,7 @@ export function createApp(container: AppContainer): Express {
       container.workspaceMembersRepository,
       container.workspaceProvidersRepository,
       container.workspaceTemplatesRepository,
+      container.guardrailPolicyRepository,
     ),
   );
   app.use(

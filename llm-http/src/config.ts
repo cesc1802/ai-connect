@@ -44,6 +44,14 @@ const configSchema = z.object({
   PROVIDER_KEY_VAULT_KEY: z.string().optional(),
   // How long the gateway serves the last DB-loaded provider set before re-checking.
   PROVIDER_REFRESH_TTL_MS: z.coerce.number().int().positive().default(60_000),
+  // Optional dedicated moderation classifier. Isolated from the chat providers
+  // (its own gateway + credentials) so a chat-provider outage never disables
+  // moderation and vice-versa. All four must be set to enable it; otherwise the
+  // moderation guardrail check stays inert.
+  MODERATION_PROVIDER: z.enum(["anthropic", "openai", "ollama", "minimax"]).optional(),
+  MODERATION_MODEL: z.string().optional(),
+  MODERATION_API_KEY: z.string().optional(),
+  MODERATION_BASE_URL: z.string().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;

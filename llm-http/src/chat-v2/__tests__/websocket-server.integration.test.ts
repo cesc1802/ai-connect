@@ -91,6 +91,10 @@ describe("attachChatV2Server integration", () => {
       workspaceTemplatesRepository: {
         listForWorkspace: vi.fn().mockResolvedValue([]),
       } as unknown as V2ServerDeps["workspaceTemplatesRepository"],
+      guardrailPolicyRepository: {
+        get: vi.fn().mockResolvedValue({ enabled: false, checks: [] }),
+        upsert: vi.fn(),
+      } as unknown as V2ServerDeps["guardrailPolicyRepository"],
       logger: mockLogger,
     });
 

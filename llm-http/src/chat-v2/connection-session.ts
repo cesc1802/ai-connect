@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
-import type { User, ChatEvent, ChatRequested, ConversationRepository, MessageRepository, ChatMessage } from "@ai-connect/shared";
+import type { User, ChatEvent, ChatRequested, ConversationRepository, MessageRepository, ChatMessage, GuardrailPolicyRepository } from "@ai-connect/shared";
+import { runGuardrails, type ChatRequest, type ModerationVerdict } from "llm-gateway";
 import type { EventBus } from "../events/event-bus.js";
 import type { ConnectionRegistry, Connection } from "../transport/connection-registry.js";
 import type { ActiveWorkspaceResolver } from "../workspace/active-workspace-resolver.js";
@@ -22,6 +23,8 @@ export interface ConnectionSessionDeps {
   activeWorkspaceResolver: ActiveWorkspaceResolver;
   workspaceMembersRepository: WorkspaceMembersRepository;
   workspaceTemplatesRepository: WorkspaceTemplatesRepository;
+  guardrailPolicyRepository: GuardrailPolicyRepository;
+  moderate?: (text: string) => Promise<ModerationVerdict>;
   logger: Logger;
 }
 
@@ -165,6 +168,9 @@ export class ConnectionSession {
   private async handleChatSend(msg: Extract<ClientV2Message, { type: "c.chat.send" }>): Promise<void> {
     let conversationId = msg.conversationId;
     let templateId: string | undefined;
+    // Resolved on both branches; required to look up the workspace guardrail
+    // policy before the request leaves the system.
+    let workspaceId: string;
 
     if (conversationId) {
       const conv = await this.deps.convRepo.get(conversationId);
@@ -177,10 +183,10 @@ export class ConnectionSession {
         return;
       }
       templateId = conv.templateId;
+      workspaceId = conv.workspaceId;
     } else {
       // Resolve the target workspace: an explicit workspaceId (must be a member)
       // wins over the user's active workspace.
-      let workspaceId: string;
       if (msg.workspaceId) {
         const member = await this.deps.workspaceMembersRepository.isMember(this.user.id, msg.workspaceId);
         if (!member) {
@@ -242,13 +248,40 @@ export class ConnectionSession {
     const requestId = randomUUID();
     this.ownedRequestIds.add(requestId);
 
+    // Enforce the workspace guardrail policy BEFORE publishing: the redacted
+    // request then flows to both the persister (store-redacted) and the gateway.
+    // A block never publishes chat.requested — it emits a content-free failed
+    // event, so no offending content reaches the transcript, provider, or logs.
+    const policy = await this.deps.guardrailPolicyRepository.get(workspaceId);
+    const guardrailInput: ChatRequest = {
+      model: msg.model,
+      messages: allMessages,
+      maxTokens: msg.maxTokens ?? 4096,
+      ...(msg.temperature !== undefined ? { temperature: msg.temperature } : {}),
+    };
+    const outcome = await runGuardrails(
+      guardrailInput,
+      policy,
+      this.deps.moderate ? { moderate: this.deps.moderate } : {},
+    );
+    if (outcome.blocked) {
+      await this.deps.bus.publish({
+        type: "stream.failed",
+        requestId,
+        code: "guardrail_blocked",
+        message: "Request blocked by guardrail policy",
+      });
+      return;
+    }
+
     const chatRequest: ChatRequested = {
       type: "chat.requested",
       requestId,
       userId: this.user.id,
       conversationId,
+      workspaceId,
       model: msg.model,
-      messages: allMessages,
+      messages: outcome.request.messages,
     };
     if (msg.maxTokens !== undefined) chatRequest.maxTokens = msg.maxTokens;
     if (msg.temperature !== undefined) chatRequest.temperature = msg.temperature;

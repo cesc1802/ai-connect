@@ -24,6 +24,8 @@ async function main() {
     activeWorkspaceResolver: container.activeWorkspaceResolver,
     workspaceMembersRepository: container.workspaceMembersRepository,
     workspaceTemplatesRepository: container.workspaceTemplatesRepository,
+    guardrailPolicyRepository: container.guardrailPolicyRepository,
+    ...(container.moderate ? { moderate: container.moderate } : {}),
     logger: container.logger,
   });
 
@@ -62,6 +64,7 @@ function createShutdownHandler(
     await container.chatHandler.dispose();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await container.chatGateway.dispose();
+    await container.moderationGateway?.dispose();
     if (container.dbClient) await container.dbClient.close();
     process.exit(0);
   };

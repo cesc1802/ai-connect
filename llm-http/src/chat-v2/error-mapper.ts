@@ -8,6 +8,10 @@ const ERROR_CODE_MAP: Record<string, string> = {
   ModelNotFoundError: "model_not_found",
   ContentFilterError: "content_filtered",
   AbortError: "request_cancelled",
+  // Keyed on the error's `name` (not its `code`). The gateway guarantees
+  // GuardrailBlockedError.message is static and content-free, so returning it
+  // verbatim via sanitizeErrorMessage never leaks the matched secret/PII.
+  GuardrailBlockedError: "guardrail_blocked",
 };
 
 export function mapErrorToCode(err: Error): string {
