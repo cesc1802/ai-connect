@@ -597,6 +597,31 @@ llm-http
 
 ## Workspace Detail + Org Template Management
 
+**Token Usage Capture & Reporting:**
+
+**Overview:** On each chat turn, the gateway stamps the resolved provider kind onto the stream chunk. The chat handler forwards that as `provider` on the `stream.completed` event. A usage-recorder consumer subscribes to `chat.requested` (to capture userId, conversationId, model pending-map keyed by requestId) and joins on `stream.completed` to write exactly one row into `usage_metrics`. Failures wrap writes in try/catch to never break the chat stream.
+
+**Data Flow:**
+1. Gateway resolves provider kind (authoritative), falls back to model-name prefix, records `providerKind="unknown"` with `providerId=null` rather than dropping tokens
+2. `chat.requested` event → capture {userId, conversationId, model} → pending-map[requestId]
+3. `stream.completed` event → join pending entry + provider + tokens → single row to `usage_metrics`
+4. `stream.failed/stream.aborted` event → drop pending entry (no row)
+5. Provider attribution via `active-provider-resolver` = newest ENABLED provider per kind (updatedAt desc, id asc), matching gateway config source
+6. `usage_metrics.providerId` nullable FK with ON DELETE SET NULL (provider deletion does not block usage history)
+
+**API: Dashboard Usage Endpoint**
+- `GET /api/dashboard/usage` (requireAuth) — role-scoped token metrics
+- Admin: org-wide; Member: own workspaces only
+- Response: `{ byProvider: [{providerId, providerKind, inputTokens, outputTokens, totalTokens, requestCount}], byWorkspace: [{workspaceId, slug, name, inputTokens, outputTokens, totalTokens, requestCount}] }`
+
+**UI: Dashboard Overview Screen** (`llm-ui`)
+- Fetches via `llm-ui/src/lib/usage-api.ts getUsage()`
+- Renders `llm-ui/src/components/widgets/usage-summary.tsx`
+- Vietnamese labels: "Sử dụng token", "Theo provider", "Theo workspace"
+- Compact K/M number formatting; empty + loading states
+
+---
+
 **Workspace Detail Feature (Members / Templates / Providers Tabs):**
 
 **Overview:** Workspace admins manage members, attach prompt templates, and configure providers from a detail screen. Org admins manage the shared prompt-template library via a dedicated templates screen. All users can view the org-wide members directory scoped by role.

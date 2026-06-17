@@ -79,6 +79,7 @@ export class ChatHandler {
             usage: chunk.usage,
             finishReason: chunk.finishReason,
             latencyMs: Date.now() - startedAt,
+            ...(chunk.provider && { provider: chunk.provider }),
           });
         }
       }

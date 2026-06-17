@@ -15,9 +15,11 @@ export const usageMetrics = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    providerId: uuid("provider_id")
-      .notNull()
-      .references(() => providers.id, { onDelete: "restrict" }),
+    // Nullable + SET NULL so a provider can be deleted without blocking on its
+    // usage history; rows keep providerKind + model for per-provider rollups.
+    providerId: uuid("provider_id").references(() => providers.id, {
+      onDelete: "set null",
+    }),
     conversationId: uuid("conversation_id").references(
       () => conversations.id,
       { onDelete: "set null" }

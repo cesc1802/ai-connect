@@ -5,6 +5,7 @@ import { buildContainer, type AppContainer } from "./container.js";
 import { createApp } from "./app.js";
 import { attachChatV2Server, type V2WebSocketHandle } from "./chat-v2/index.js";
 import { attachMessagePersister } from "./chat-v2/message-persister.js";
+import { attachUsageRecorder } from "./usage/usage-recorder.js";
 
 async function main() {
   const config = loadConfig();
@@ -30,6 +31,14 @@ async function main() {
     bus: container.bus,
     convRepo: container.convRepo,
     msgRepo: container.msgRepo,
+  });
+
+  attachUsageRecorder({
+    bus: container.bus,
+    convRepo: container.convRepo,
+    usageRepo: container.usageRepository,
+    resolveActiveProviderId: container.resolveActiveProviderId,
+    logger: container.logger,
   });
 
   server.listen(config.PORT, () => {

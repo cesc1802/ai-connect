@@ -239,6 +239,27 @@ describe("LLMGateway", () => {
       expect(chunks[0]?.delta).toEqual({ type: "text", text: "Hello" });
     });
 
+    it("stamps the resolved provider kind on the terminal chunk only", async () => {
+      (mockProvider.streamCompletion as ReturnType<typeof vi.fn>).mockReturnValue(
+        createMockStream()
+      );
+
+      const gateway = new LLMGateway({
+        providers: {
+          anthropic: { apiKey: "test-key" },
+        },
+      });
+
+      const chunks: StreamChunk[] = [];
+      for await (const chunk of gateway.stream(createTestRequest())) {
+        chunks.push(chunk);
+      }
+
+      // Non-terminal chunk carries no provider; terminal (finishReason) chunk does.
+      expect(chunks[0]?.provider).toBeUndefined();
+      expect(chunks[1]?.provider).toBe("anthropic");
+    });
+
     it("increments request count on stream", async () => {
       (mockProvider.streamCompletion as ReturnType<typeof vi.fn>).mockReturnValue(
         createMockStream()

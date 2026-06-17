@@ -514,6 +514,11 @@ llm-http/src/
 │   ├── dashboard-routes.ts      # GET /api/dashboard/stats (role-scoped overview)
 │   └── __tests__/               # Routes tests
 │
+├── usage/                        # Token usage tracking (per provider & workspace)
+│   ├── usage-recorder.ts        # Event-driven usage metrics capture
+│   ├── active-provider-resolver.ts # Provider attribution via config source
+│   └── __tests__/               # Usage recording tests
+│
 ├── workspace/                    # Workspace CRUD (paging, admin) + detail feature
 │   ├── workspace-repository.ts  # Repository interface (getById, isMember, list, create, update, softDelete)
 │   ├── drizzle-workspace-repository.ts  # Postgres implementation (Drizzle ORM)
@@ -671,6 +676,14 @@ llm-http/src/
 - `GET /workspaces/:id/templates` (member-scoped); `POST` {templateId} → 201 (409 already attached); `DELETE .../templates/:templateId` → 204
 - Implementation: users-routes.ts (mounted at /users), workspace-members-routes.ts, workspace-providers-routes.ts, workspace-templates-routes.ts + repository layers; members/providers/templates routers mounted in workspace-by-id-routes.ts
 
+**Dashboard API:**
+
+*Token Usage Endpoint (`llm-http/src/dashboard/`):*
+- `GET /api/dashboard/usage` — role-scoped token usage metrics (requireAuth)
+- Response: `{ byProvider: [{providerId, providerKind, inputTokens, outputTokens, totalTokens, requestCount}], byWorkspace: [{workspaceId, slug, name, inputTokens, outputTokens, totalTokens, requestCount}] }`
+- Admin role: org-wide; Member role: own workspaces only (both byProvider and byWorkspace filtered)
+- Data sourced from `usage_metrics` table; provider attribution via `active-provider-resolver` (newest ENABLED provider per kind)
+
 **Role-Scoped Users API:**
 
 *Backend Layer (`llm-http/src/users/`):*
@@ -730,7 +743,7 @@ llm-db/src/
 │   ├── workspace-providers.ts    # Workspace provider overrides
 │   ├── prompt-templates.ts       # Org prompt template library (slug unique, title, category, icon, author_name, uses, description, body nullable)
 │   ├── workspace-templates.ts    # Workspace-template join (composite PK: workspace_id + template_id, cascade delete)
-│   ├── usage-metrics.ts          # Token usage tracking
+│   ├── usage-metrics.ts          # Token usage tracking (userId, conversationId, model, inputTokens, outputTokens, providerId nullable, providerKind)
 │   └── index.ts                  # Export all schema
 │
 ├── cli/
@@ -743,7 +756,8 @@ llm-db/src/
 │   ├── 0003_prompt_template_body.sql # Add nullable body column to prompt_templates
 │   ├── 0004_provider_last_four.sql # Add keyLastFour to providers table
 │   ├── 0005_provider_default_model_scope_catalog_seed.sql # Add default_model + scope to providers; seed provider_catalogs
-│   └── 0006_conversation_template_id.sql # Add templateId FK to conversations
+│   ├── 0006_conversation_template_id.sql # Add templateId FK to conversations
+│   └── 0007_usage_metrics_provider_nullable.sql # Make provider_id nullable on usage_metrics; set FK to ON DELETE SET NULL
 │
 ├── drizzle.config.ts             # drizzle-kit config (reads compiled dist/schema/index.js)
 ├── tsconfig.json                 # TypeScript build config

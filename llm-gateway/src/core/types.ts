@@ -105,6 +105,8 @@ export interface StreamChunk {
   delta: StreamDelta;
   finishReason?: FinishReason;
   usage?: TokenUsage;
+  /** Provider (kind) that served this turn; set on the final chunk only. */
+  provider?: ProviderName;
 }
 
 export type StreamDelta =

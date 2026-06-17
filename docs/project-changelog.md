@@ -6,6 +6,32 @@ This document records significant changes, features, and fixes across the LLM Ga
 
 ---
 
+## [Unreleased] - 2026-06-17
+
+### llm-http v0.0.6 (Feature Release)
+
+**Token Usage Capture per Provider & Workspace**
+
+New event-driven token usage metrics capture pipeline with provider attribution and role-scoped dashboard API.
+
+**Features:**
+- `GET /api/dashboard/usage` — Role-scoped token usage endpoint (requireAuth; admin: org-wide; member: own workspaces only)
+- Response: `{ byProvider: [{providerId, providerKind, inputTokens, outputTokens, totalTokens, requestCount}], byWorkspace: [{workspaceId, slug, name, inputTokens, outputTokens, totalTokens, requestCount}] }`
+- Event-driven `usage-recorder.ts` consumer: captures {userId, conversationId, model} at `chat.requested` (pending-map keyed by requestId), joins on `stream.completed` to write single `usage_metrics` row
+- Provider attribution: gateway-reported provider kind is authoritative; falls back to model-name prefix; records `providerKind="unknown"` with `providerId=null` rather than dropping tokens
+- `providerId` resolved by `active-provider-resolver.ts` = newest ENABLED provider per kind (updatedAt desc, id asc)
+- `usage_metrics.providerId` nullable FK with ON DELETE SET NULL (deleting provider does not block usage history; rows keep providerKind + model)
+- Metrics writes wrapped in try/catch (failures never break chat stream); stream.failed/stream.aborted drop pending entry (no row persisted)
+
+**Database:**
+- Migration: `0007_usage_metrics_provider_nullable.sql` — makes provider_id nullable; sets FK to ON DELETE SET NULL
+
+**UI Integration (llm-ui):**
+- `lib/usage-api.ts getUsage()` — Fetch wrapper for dashboard usage endpoint
+- `components/widgets/usage-summary.tsx` — Overview screen widget (Vietnamese: "Sử dụng token", "Theo provider", "Theo workspace"; K/M number formatting; empty + loading states)
+
+---
+
 ## [Unreleased] - 2026-06-11
 
 ### llm-ui v0.0.5 (Feature Release)

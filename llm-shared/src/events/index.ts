@@ -18,4 +18,9 @@ export type {
   Message,
   ConversationRepository,
   MessageRepository,
+  NewUsageRecord,
+  ProviderUsage,
+  WorkspaceUsage,
+  UsageScope,
+  UsageRepository,
 } from "./repository-types.js";

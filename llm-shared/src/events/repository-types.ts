@@ -31,3 +31,47 @@ export interface MessageRepository {
   append(message: Omit<Message, "id">): Promise<Message>;
   listByConversation(conversationId: string): Promise<Message[]>;
 }
+
+/** One usage row to persist for a completed chat turn. */
+export interface NewUsageRecord {
+  workspaceId: string;
+  userId: string;
+  providerId?: string | null;
+  conversationId?: string | null;
+  providerKind: string;
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  latencyMs: number;
+}
+
+/** Token totals grouped by the provider that served the turns. */
+export interface ProviderUsage {
+  providerId: string | null;
+  providerKind: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  requestCount: number;
+}
+
+/** Token totals grouped by workspace. */
+export interface WorkspaceUsage {
+  workspaceId: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  requestCount: number;
+}
+
+/**
+ * Scope for usage aggregation: "all" for org-wide (admin), or an explicit list
+ * of workspace ids (member — limited to their workspaces).
+ */
+export type UsageScope = "all" | string[];
+
+export interface UsageRepository {
+  record(input: NewUsageRecord): Promise<void>;
+  aggregateByProvider(scope: UsageScope): Promise<ProviderUsage[]>;
+  aggregateByWorkspace(scope: UsageScope): Promise<WorkspaceUsage[]>;
+}

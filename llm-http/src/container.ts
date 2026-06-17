@@ -24,7 +24,13 @@ import { DrizzleMessageRepository } from "./conversations/drizzle-message-reposi
 import type {
   ConversationRepository,
   MessageRepository,
+  UsageRepository,
 } from "@ai-connect/shared";
+import { DrizzleUsageRepository } from "./usage/drizzle-usage-repository.js";
+import {
+  createActiveProviderResolver,
+  type ResolveActiveProviderId,
+} from "./usage/active-provider-resolver.js";
 import { createDbClient, type DbClient } from "@ai-connect/db";
 import { seedDrizzleDevData } from "./auth/seed-users.js";
 import { seedPromptTemplates } from "./workspace/seed-prompt-templates.js";
@@ -62,6 +68,8 @@ export interface AppContainer {
   registry: ConnectionRegistry;
   convRepo: ConversationRepository;
   msgRepo: MessageRepository;
+  usageRepository: UsageRepository;
+  resolveActiveProviderId: ResolveActiveProviderId;
   activeWorkspaceResolver: ActiveWorkspaceResolver;
   workspaceRepository: WorkspaceRepository;
   workspaceMembersRepository: WorkspaceMembersRepository;
@@ -128,6 +136,8 @@ export async function buildContainer(
 
   const convRepo: ConversationRepository = new DrizzleConversationRepository(dbClient);
   const msgRepo: MessageRepository = new DrizzleMessageRepository(dbClient);
+  const usageRepository: UsageRepository = new DrizzleUsageRepository(dbClient);
+  const resolveActiveProviderId = createActiveProviderResolver(dbClient);
   const activeWorkspaceResolver: ActiveWorkspaceResolver =
     new DrizzleActiveWorkspaceResolver(dbClient);
   if (config.NODE_ENV !== "production") {
@@ -155,6 +165,8 @@ export async function buildContainer(
     registry,
     convRepo,
     msgRepo,
+    usageRepository,
+    resolveActiveProviderId,
     activeWorkspaceResolver,
     workspaceRepository,
     workspaceMembersRepository,

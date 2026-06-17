@@ -298,12 +298,14 @@ Files are applied in **numeric order only** — do not rename or reorder files.
 | `users` | id, username, passwordHash, role, timestamps | User accounts | System-level `role` (admin\|member) |
 | `user_workspaces` | user_id, workspace_id, timestamps | User membership | Composite PK |
 | `user_role_workspaces` | user_id, workspace_id, role, timestamps | Workspace-scoped roles | Separate from system role |
-| `conversations` | id, workspace_id, user_id, title, timestamps | Chat sessions | Per workspace + user |
-| `messages` | id, conversation_id, role, content, timestamps | Chat messages | Role: user\|assistant\|system |
+| `conversations` | id, workspace_id, user_id, title, templateId, timestamps | Chat sessions | Per workspace + user; templateId optional |
+| `messages` | id, conversation_id, role, content, partial, timestamps | Chat messages | Role: user\|assistant\|system; partial on abort |
 | `provider_catalogs` | id, name, host, models (JSONB), timestamps | LLM provider registry | Models stored as JSON array |
 | `providers` | id, catalog_id, alias, baseUrl, apiKeyRef, enabled, timestamps | Provider instances | Workspace-agnostic config |
 | `workspace_providers` | workspace_id, provider_id, aliasOverride, enabled, timestamps | Workspace provider selection | Per-workspace provider overrides |
-| `usage_metrics` | id, workspace_id, user_id, provider_id, conversation_id, ... | Token usage tracking | For quota enforcement |
+| `prompt_templates` | id, slug, title, category, icon, description, body, author_name, uses, timestamps | Org template library | Slug unique; body nullable |
+| `workspace_templates` | workspace_id, template_id, timestamps | Template attachment | Composite PK; cascade delete |
+| `usage_metrics` | id, userId, conversationId, model, inputTokens, outputTokens, providerId, providerKind, timestamps | Token usage tracking | providerId nullable with ON DELETE SET NULL |
 
 ---
 

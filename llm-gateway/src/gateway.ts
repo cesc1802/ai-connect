@@ -400,7 +400,15 @@ export class LLMGateway {
 
       for await (const chunk of retryProvider.streamCompletion(normalizedRequest, signal)) {
         reset();
-        yield chunk;
+        // Stamp the resolved provider kind on the terminal chunk (the one
+        // carrying usage/finishReason) so downstream usage capture attributes
+        // tokens to the provider that actually served the turn, not the model
+        // prefix (which routing/fallback can diverge from).
+        if (chunk.finishReason || chunk.usage) {
+          yield { ...chunk, provider: provider.name };
+        } else {
+          yield chunk;
+        }
       }
 
       const latency = Math.round(performance.now() - startTime);

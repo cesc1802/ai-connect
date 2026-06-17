@@ -50,6 +50,13 @@
       "when": 1781189253003,
       "tag": "0006_conversation_template_id",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781683034525,
+      "tag": "0007_usage_metrics_provider_nullable",
+      "breakpoints": true
     }
   ]
 }

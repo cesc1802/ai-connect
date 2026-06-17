@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -5,11 +6,26 @@ import { StatTile } from "@/components/widgets/stat-tile";
 import { Avatar } from "@/components/widgets/avatar";
 import { RoleBadge } from "@/components/widgets/role-badge";
 import { WsEmblem } from "@/components/widgets/ws-emblem";
+import { UsageSummary } from "@/components/widgets/usage-summary";
 import { Icon } from "@/lib/icons";
+import { getUsage, type UsageResponse } from "@/lib/usage-api";
 import { USERS, WORKSPACES, PROVIDERS, ORG_ROLES, type OrgRoleKey } from "@/lib/mock-data";
 
 export function OverviewScreen() {
   const orgRoleKeys: OrgRoleKey[] = ["owner", "admin", "member"];
+
+  const [usage, setUsage] = useState<UsageResponse | null>(null);
+  const [usageLoading, setUsageLoading] = useState(true);
+  useEffect(() => {
+    let active = true;
+    getUsage()
+      .then((data) => active && setUsage(data))
+      .catch(() => active && setUsage(null))
+      .finally(() => active && setUsageLoading(false));
+    return () => {
+      active = false;
+    };
+  }, []);
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
       <PageHeader
@@ -24,6 +40,8 @@ export function OverviewScreen() {
         <StatTile icon="cpu" label="Providers" value={String(PROVIDERS.length)} sub="Đã cấu hình" />
         <StatTile icon="scroll-text" label="Prompt templates" value="12" sub="Sẵn dùng" />
       </div>
+
+      <UsageSummary data={usage} loading={usageLoading} />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-xl border bg-card p-5 lg:col-span-2">

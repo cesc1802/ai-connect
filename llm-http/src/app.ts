@@ -15,6 +15,7 @@ import { createUsersRoutes } from "./users/users-routes.js";
 import { createProvidersRoutes } from "./providers/providers-routes.js";
 import { createMeDefaultModelRoutes } from "./providers/me-default-model-routes.js";
 import { createDashboardRoutes } from "./dashboard/dashboard-routes.js";
+import { createUsageRoutes } from "./dashboard/usage-routes.js";
 import { createRedactLogMiddleware } from "./shared/redact-log-middleware.js";
 import { createRateLimit } from "./shared/rate-limit.js";
 import { createCors } from "./shared/cors-middleware.js";
@@ -93,6 +94,11 @@ export function createApp(container: AppContainer): Express {
       container.usersService,
       container.orgProvidersRepo,
     ),
+  );
+  app.use(
+    "/api/dashboard",
+    requireAuth,
+    createUsageRoutes(container.usageRepository, container.workspaceRepository),
   );
   app.use(
     "/providers",

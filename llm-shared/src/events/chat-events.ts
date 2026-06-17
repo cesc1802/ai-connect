@@ -56,6 +56,8 @@ export interface StreamCompleted {
   usage: TokenUsage;
   finishReason: FinishReason;
   latencyMs: number;
+  /** Provider kind that served the turn; used for usage attribution. */
+  provider?: string;
 }
 
 export interface StreamFailed {
